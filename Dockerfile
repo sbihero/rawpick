@@ -1,5 +1,8 @@
 FROM python:3.13-slim
 
+LABEL org.opencontainers.image.title="rawpick" \
+      org.opencontainers.image.source="https://github.com/sbihero/rawpick"
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PHOTO_ROOT=/photos \

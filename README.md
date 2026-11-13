@@ -46,14 +46,16 @@ RAW+JPG 照片快速粗筛：用 JPG 预览挑片，自动把选中照片对应�
    ```bash
    cp deploy.env.example deploy.env
    ```
-3. 在 Unraid 网页右上角的终端（`>_`）里运行：
+3. 在 Unraid 网页右上角的终端（`>_`）里构建镜像，同时安装 Unraid 模板：
    ```bash
    cd /mnt/user/<共享>/rawpick
-   bash deploy.sh
+   bash deploy.sh --build-only
    ```
-4. 在浏览器里打开 `http://<Unraid IP>:8080`。
+4. 在 Docker 页面点 **Add Container**，**Template** 选 **rawpick**，确认后点 **Apply**。
+5. 在浏览器里打开 `http://<Unraid IP>:8080`。
 
-完整步骤、更新方法和常见问题见 [部署指南](docs/deployment.md)。
+不想用 Unraid 模板的话，也可以直接运行 `bash deploy.sh`，一条命令完成构建和启动。
+两种方式的区别、更新方法和常见问题见 [部署指南](docs/deployment.md)。
 
 ## 快捷键
 

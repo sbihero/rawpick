@@ -22,7 +22,8 @@ frontend/                前端 TypeScript 源码
   src/api.ts / util.ts   接口与工具
 tests/                   pytest：单元测试、API 测试、tests/e2e 浏览器端到端测试
 tools/make_testdata.py   生成测试用的出门目录
-Dockerfile, deploy.sh    部署
+Dockerfile, deploy.sh    部署（命令行方式 / --build-only 模板方式）
+unraid/my-rawpick.xml    Unraid Docker 模板
 docs/                    文档
 ```
 

@@ -195,7 +195,7 @@ SQLite 文件放在 `DATA_DIR/rawpick.db`，共四张表。源目录里不写任
 | 图像处理 | Pillow | JPEG 草稿模式解码，littlecms 色彩转换 |
 | 存储 | SQLite（WAL） | 单连接 + 锁 |
 | 前端 | 原生 TypeScript，只用 `tsc` 编译 | 不用框架和打包器；编译结果提交在 `rawpick/static/js`，构建镜像不需要 Node |
-| 部署 | 单阶段 Dockerfile + `deploy.sh` | 在 Unraid 本机构建和运行 |
+| 部署 | 单阶段 Dockerfile + `deploy.sh` + Unraid 模板 | 在 Unraid 本机构建镜像。容器可以用 Unraid 模板创建（推荐，能在 Docker 页面编辑），也可以由脚本直接 `docker run` |
 
 最初计划用 FastAPI、pyvips、Vite。改成现在的组合是为了能在开发环境里把整套东西完整跑起来测试，
 同时减少镜像的依赖。

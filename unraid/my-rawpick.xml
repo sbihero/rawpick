@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>rawpick</Name>
+  <Repository>rawpick</Repository>
+  <Registry/>
+  <Network>bridge</Network>
+  <MyIP/>
+  <Shell>sh</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/sbihero/rawpick/issues</Support>
+  <Project>https://github.com/sbihero/rawpick</Project>
+  <Overview>RAW+JPG 照片快速粗筛：用 JPG 预览挑片，把选中照片对应的 RAW 拷到每个出门目录下的 select/。电脑和 iPad 浏览器都能用。[br][br]使用前先在 Unraid 终端里进入代码目录，运行 bash deploy.sh --build-only 构建本地镜像 rawpick。</Overview>
+  <Category>MediaApp:Photos Tools:</Category>
+  <WebUI>http://[IP]:[PORT:8080]/</WebUI>
+  <TemplateURL/>
+  <Icon/>
+  <ExtraParams>--user 99:100</ExtraParams>
+  <PostArgs/>
+  <CPUset/>
+  <DateInstalled/>
+  <DonateText/>
+  <DonateLink/>
+  <Requires>先运行 bash deploy.sh --build-only 构建本地镜像 rawpick</Requires>
+  <Config Name="WebUI 端口" Target="8080" Default="8080" Mode="tcp" Description="浏览器访问端口：http://Unraid的IP:这个端口" Type="Port" Display="always" Required="true" Mask="false">8080</Config>
+  <Config Name="照片根目录" Target="/photos" Default="/mnt/user/photos" Mode="rw" Description="下面每个一级子目录是一次出门，里面有 jpg/ 和 raw/。需要读写：导出时会在出门目录里创建 select/" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/photos</Config>
+  <Config Name="数据目录" Target="/data" Default="/mnt/user/appdata/rawpick" Mode="rw" Description="数据库和预览缓存，建议放在 SSD 缓存池上。目录属主需为 99:100（deploy.sh --build-only 会自动设置）" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/rawpick</Config>
+  <Config Name="预览线程数" Target="PREVIEW_WORKERS" Default="4" Mode="" Description="后台生成预览的线程数" Type="Variable" Display="always" Required="false" Mask="false">4</Config>
+  <Config Name="UMASK" Target="UMASK" Default="000" Mode="" Description="新建的 select/ 和文件对所有人可读写，Windows 上通过 SMB 能正常移动、删除" Type="Variable" Display="advanced" Required="false" Mask="false">000</Config>
+  <Config Name="RAW 扩展名" Target="RAW_EXTS" Default="" Mode="" Description="逗号分隔，留空用默认：arw,cr2,cr3,nef,raf,dng,orf,rw2" Type="Variable" Display="advanced" Required="false" Mask="false"/>
+</Container>
