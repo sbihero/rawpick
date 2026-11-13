@@ -1,0 +1,13 @@
+.git
+.github
+frontend
+tests
+tools
+docs
+scripts
+data
+photos
+deploy.env
+**/__pycache__
+**/*.pyc
+.pytest_cache
