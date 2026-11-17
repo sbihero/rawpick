@@ -16,7 +16,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from conftest import SESSION1  # noqa: E402
+from conftest import SESSION1, SESSION2  # noqa: E402
 from server_util import LiveServer  # noqa: E402
 
 playwright = pytest.importorskip("playwright.sync_api")
@@ -67,9 +67,9 @@ def page(browser, srv):
     assert errors == []
 
 
-def open_session(pg):
+def open_session(pg, name=SESSION1):
     pg.wait_for_selector(".session-card")
-    pg.click(f".session-card:has-text('{SESSION1}')")
+    pg.click(f".session-card[data-name='{name}']")
     pg.wait_for_selector("[data-testid=name]:not(:empty)")
 
 
@@ -82,21 +82,21 @@ def test_keyboard_culling_and_filters(page):
     assert text(page, "name") == "DSC00001.JPG"
     assert text(page, "pos") == "1 / 11"
 
-    # P 选中、X 取消，标记后自动跳到下一张
-    for k in ("p", "x", "p"):
+    # 左手：F 选取、Q 取消；右手：Enter 选取、Backspace 取消。标记后自动跳到下一张
+    for k in ("f", "q", "Enter", "Backspace", "d", "ArrowRight", "a"):
         page.keyboard.press(k)
     assert text(page, "count") == "已选 2 / 共 11"
-    assert text(page, "pos") == "4 / 11"
+    assert text(page, "pos") == "6 / 11"
+    assert page.evaluate("location.hash").startswith("#/s/")  # Backspace 没有让页面后退
 
     # 只看已选
     page.click("[data-filter=picked]")
     assert text(page, "pos").endswith("/ 2")
     page.keyboard.press("ArrowLeft")
-    page.keyboard.press("ArrowLeft")
     assert text(page, "name") == "DSC00001.JPG"
     # 在过滤视图里取消：照片变灰留在原位，不立刻消失
-    page.keyboard.press("x")
-    page.keyboard.press("ArrowLeft")
+    page.keyboard.press("q")
+    page.keyboard.press("a")
     assert text(page, "name") == "DSC00001.JPG"
     assert "已不在当前过滤中" in page.text_content(".badges")
     assert text(page, "pos") == "1 / 2"
@@ -109,17 +109,36 @@ def test_keyboard_culling_and_filters(page):
     assert text(page, "pos").endswith("/ 10")
 
 
-def test_grid_navigation(page):
+def test_grid_navigation_and_layout(page):
     open_session(page)
     page.keyboard.press("g")
     page.wait_for_selector(".grid .cell")
     assert page.locator(".grid .cell").count() == 11
     assert page.get_attribute(".cell.focus", "data-i") == "0"
-    page.keyboard.press("ArrowRight")
-    page.keyboard.press("p")  # 网格里也能标记，并自动下移
+    page.keyboard.press("d")
+    page.keyboard.press("Enter")  # 网格里 Enter 也是选取，并自动下移
     assert page.locator(".cell.picked").count() == 1
     assert page.get_attribute(".cell.focus", "data-i") == "2"
-    page.keyboard.press("Enter")
+    page.keyboard.press("s")  # 下移一行
+    cols = page.evaluate("[...document.querySelectorAll('.grid .cell')].filter(c => c.offsetTop === document.querySelector('.grid .cell').offsetTop).length")
+    assert page.get_attribute(".cell.focus", "data-i") == str(min(2 + cols, 10))
+    page.keyboard.press("w")
+    assert page.get_attribute(".cell.focus", "data-i") == "2"
+
+    # 布局：每个格子高度相同，图片（横幅和竖幅）完整落在格子里
+    page.wait_for_function("[...document.querySelectorAll('.grid .cell img')].slice(0, 4).every(i => i.naturalWidth > 0)")
+    boxes = page.evaluate("""() => [...document.querySelectorAll('.grid .cell')].slice(0, 4).map(c => {
+        const b = c.getBoundingClientRect(), i = c.querySelector('img');
+        return {h: b.height, w: b.width, iw: i.naturalWidth, ih: i.naturalHeight,
+                ib: i.getBoundingClientRect().height};
+    })""")
+    heights = {round(b["h"]) for b in boxes}
+    assert len(heights) == 1 and heights.pop() >= 120
+    portrait = boxes[2]  # DSC00003 是竖拍
+    assert portrait["ih"] > portrait["iw"]
+    assert all(abs(b["ib"] - b["h"]) <= 4 for b in boxes)  # img 铺满格子，由 object-fit 负责缩放
+
+    page.keyboard.press("e")
     assert text(page, "name") == "DSC00003.JPG"
     page.keyboard.press("g")
     page.click(".cell[data-i='5']")
@@ -134,15 +153,64 @@ def test_zoom_and_preload(page, srv):
     page.keyboard.press("z")
     page.wait_for_function("document.querySelector('img.orig').naturalWidth === 480")
     assert page.is_visible(".zoomwrap")
+    page.keyboard.press("Space")  # 空格也能退出放大
+    assert not page.is_visible(".zoomwrap")
+    page.keyboard.press("Space")
+    assert page.is_visible(".zoomwrap")
     page.keyboard.press("Escape")
     assert not page.is_visible(".zoomwrap")
 
     # 预加载：显示第 i 张时，第 i+1、i+2 张的大预览已请求
     page.keyboard.press("ArrowRight")
     page.wait_for_timeout(300)
-    ids = page.evaluate("fetch('/api/sessions/1/photos').then(r => r.json()).then(d => d.photos.map(p => p.id))")
+    ids = page.evaluate("fetch('/api/sessions/' + location.hash.split('/')[2] + '/photos').then(r => r.json()).then(d => d.photos.map(p => p.id))")
     for pid in ids[1:4]:
         assert any(f"/img/{pid}/preview" in u for u in previews), pid
+
+
+def test_help_panel(page):
+    open_session(page)
+    page.click("[data-testid=help-btn]")
+    panel = page.locator("[data-testid=help-panel]")
+    assert "Backspace" in panel.text_content() and "左右滑动" in panel.text_content()
+    page.keyboard.press("Escape")
+    assert page.locator(".backdrop").count() == 0
+    page.keyboard.press("Shift+Slash")  # ? 键
+    assert page.locator("[data-testid=help-panel]").count() == 1
+
+
+def test_custom_shortcuts(page):
+    page.click("text=设置")
+    page.wait_for_selector(".keys-table")
+    # 给“下一张”加一个 J
+    page.click("tr[data-action=next] button[data-action=next]")
+    page.keyboard.press("j")
+    page.wait_for_selector("tr[data-action=next] kbd:text('J')")
+    # 把 A 加到“下一张”：会从“上一张”上移走
+    page.click("tr[data-action=next] button[data-action=next]")
+    page.keyboard.press("a")
+    page.wait_for_selector("tr[data-action=next] kbd:text('A')")
+    assert page.locator("tr[data-action=prev] kbd:text('A')").count() == 0
+    # 删除 D
+    page.click("tr[data-action=next] .chip:has(kbd:text('D')) .chip-x")
+    page.wait_for_function("!document.querySelector('tr[data-action=next]').textContent.includes('D×')")
+
+    page.click("text=‹ 返回")
+    open_session(page)
+    page.keyboard.press("j")
+    page.keyboard.press("a")
+    assert text(page, "name") == "DSC00003.JPG"
+    page.keyboard.press("d")  # 已删除，没反应
+    assert text(page, "name") == "DSC00003.JPG"
+
+    # 刷新后仍然生效（存在服务器上）；恢复默认
+    page.reload()
+    page.wait_for_selector("[data-testid=name]:not(:empty)")
+    page.keyboard.press("j")
+    assert text(page, "name") == "DSC00004.JPG"
+    page.goto(page.url.split("#")[0] + "#/settings")
+    page.click("text=恢复默认快捷键")
+    page.wait_for_function("document.querySelector('tr[data-action=prev]').textContent.includes('A')")
 
 
 def test_cursor_resumes_after_reload(page):
@@ -150,16 +218,15 @@ def test_cursor_resumes_after_reload(page):
     for _ in range(3):
         page.keyboard.press("ArrowRight")
     assert text(page, "name") == "DSC00004.JPG"
-    page.wait_for_timeout(1200)  # 光标保存有 0.8 秒延迟
-    page.reload()
+    page.reload()  # 立刻刷新：离开页面时会马上保存位置，不用等延迟
     page.wait_for_selector("[data-testid=name]:not(:empty)")
     assert text(page, "name") == "DSC00004.JPG"
 
 
 def test_export_flow(page, photo_root):
     open_session(page)
-    page.keyboard.press("p")
-    page.keyboard.press("p")
+    page.keyboard.press("f")
+    page.keyboard.press("f")
     page.click("text=导出")
     page.wait_for_selector("[data-testid=export-panel] .plan-row")
     assert "2 张" in page.text_content(".plan-details:has-text('将拷贝')")
@@ -169,6 +236,10 @@ def test_export_flow(page, photo_root):
     assert sorted(p.name for p in sel.iterdir()) == ["DSC00001.ARW", "DSC00002.ARW"]
     page.keyboard.press("Escape")
     assert page.locator(".backdrop").count() == 0
+    # 回到首页显示“已导出 2”
+    page.click("text=‹ 返回")
+    page.wait_for_selector(f".session-card[data-name='{SESSION1}'] .status-exported")
+    assert "已导出 2" in page.text_content(f".session-card[data-name='{SESSION1}']")
 
 
 def test_issues_panel(page):
@@ -177,6 +248,78 @@ def test_issues_panel(page):
     page.click(".warn-btn")
     body = page.text_content(".modal-body")
     assert "DSC09999.ARW" in body and "jpg/extra" in body and "DSC00007.jpeg" in body
+
+
+def test_home_sort_filter_view(page, photo_root):
+    import shutil
+    for name in ("20250101_Alpha", "20261231_Zulu", "20250615_Beta"):
+        shutil.copytree(photo_root / SESSION2, photo_root / name)
+    (photo_root / "20250615_Beta" / "select").mkdir()
+    (photo_root / "20250615_Beta" / "select" / "x.ARW").write_bytes(b"1")
+    page.click("text=刷新")
+    page.wait_for_selector(".session-card[data-name='20250101_Alpha']")
+    cards = lambda: page.eval_on_selector_all(".session-card", "els => els.map(e => e.dataset.name)")
+    # 默认：日期新→旧，不符合格式的排最后
+    assert cards()[:3] == ["20261231_Zulu", "20250615_Beta", "20250101_Alpha"]
+    assert "2025-06-15" in page.text_content(".session-card[data-name='20250615_Beta']")
+
+    page.fill("input[type=search]", "beta")
+    assert cards() == ["20250615_Beta"]
+    page.fill("input[type=search]", "")
+    page.select_option("select[aria-label=年份]", "2025")
+    assert set(cards()) == {"20250101_Alpha", "20250615_Beta"}
+    page.select_option("select[aria-label=年份]", "")
+    page.click("[data-status=exported]")
+    assert cards() == ["20250615_Beta"]
+    page.click("[data-status=all]")
+
+    page.select_option("select[aria-label=排序]", "topic")
+    mine = [c for c in cards() if c[:2] == "20" and "_" in c]
+    assert mine == ["20250101_Alpha", "20250615_Beta", "20261231_Zulu"]
+    page.click("[data-view=list]")
+    assert page.locator(".session-table tr.row-link").count() == 5
+
+    # 排序和视图记在这台设备上，刷新后还在
+    page.reload()
+    page.wait_for_selector(".session-table tr.row-link")
+    rows = page.eval_on_selector_all(".session-table tr.row-link", "els => els.map(e => e.dataset.name)")
+    assert [r for r in rows if r[:2] == "20" and "_" in r][0] == "20250101_Alpha"
+    page.click(".session-table tr.row-link[data-name='20250101_Alpha'] td.num >> nth=0")
+    page.wait_for_selector("[data-testid=name]:not(:empty)")
+
+
+def test_relink_after_rename(page, photo_root):
+    import os
+    import shutil
+    open_session(page)
+    page.keyboard.press("f")
+    page.wait_for_timeout(200)
+    page.click("text=‹ 返回")
+    page.wait_for_selector(".session-card")
+    # 改名并删一张：自动模式不处理，首页出现提示
+    os.rename(photo_root / SESSION1, photo_root / "20261108_改名")
+    (photo_root / "20261108_改名" / "jpg" / "DSC00012.JPG").unlink()
+    page.click("text=刷新")
+    page.wait_for_selector(".notice:not([hidden])")
+    page.click(".notice a")
+    page.wait_for_selector(f".orphan[data-name='{SESSION1}'] select")
+    page.select_option(f".orphan[data-name='{SESSION1}'] select", "20261108_改名")
+    page.once("dialog", lambda d: d.accept())  # 同名照片不全时会确认
+    page.click(f".orphan[data-name='{SESSION1}'] button.primary")
+    page.wait_for_selector("text=没有需要处理的记录")
+    page.click("text=‹ 返回")
+    page.wait_for_selector(".session-card[data-name='20261108_改名']")
+    assert "已选 1" in page.text_content(".session-card[data-name='20261108_改名']")
+    assert page.is_hidden(".notice")
+
+    # 文件夹真的删掉：在设置里删除记录
+    shutil.rmtree(photo_root / "20261108_改名")
+    page.click("text=刷新")
+    page.wait_for_selector(".notice:not([hidden])")
+    page.click(".notice a")
+    page.once("dialog", lambda d: d.accept())
+    page.click(".orphan[data-name='20261108_改名'] >> text=删除这条记录")
+    page.wait_for_selector("text=没有需要处理的记录")
 
 
 def test_ipad_touch(browser, srv):
@@ -201,4 +344,6 @@ def test_ipad_touch(browser, srv):
     assert text(pg, "name") == "DSC00003.JPG"
     pg.evaluate(swipe, [200, 600])
     assert text(pg, "name") == "DSC00002.JPG"
+    pg.tap("[data-testid=help-btn]")
+    assert pg.locator("[data-testid=help-panel]").count() == 1
     ctx.close()

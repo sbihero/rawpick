@@ -74,3 +74,36 @@ def test_sessions_are_independent(photo_root, cfg, db):
     sync_session(cfg, db, b)
     assert db.query_one("SELECT COUNT(*) n FROM photos WHERE session_id = ?", (b,))["n"] == 12
     assert db.query_one("SELECT COUNT(*) n FROM issues WHERE session_id = ?", (b,))["n"] == 0
+
+
+def test_survey_counts_and_cache(photo_root, cfg, db, monkeypatch):
+    from rawpick import scanner
+    from rawpick.scanner import survey_sessions
+
+    (photo_root / "not-a-session").mkdir()
+    first = {s["name"]: s for s in survey_sessions(photo_root, db)}
+    assert set(first) == {SESSION1, SESSION2}
+    assert first[SESSION1]["jpg_count"] == 13 and first[SESSION1]["select_count"] == 0
+
+    # 目录没变：不重新数
+    calls = []
+    real = scanner.count_jpgs
+    monkeypatch.setattr(scanner, "count_jpgs", lambda p: calls.append(p) or real(p))
+    survey_sessions(photo_root, db)
+    assert calls == []
+
+    # 加一张 JPG、建 select/ 放一个文件：只重新数变了的那个
+    sess = photo_root / SESSION1
+    (sess / "jpg" / "NEW.JPG").write_bytes(b"x")
+    (sess / "select").mkdir()
+    (sess / "select" / "DSC00001.ARW").write_bytes(b"x")
+    (sess / "select" / ".DSC00002.ARW.part").write_bytes(b"x")  # 临时文件不算
+    again = {s["name"]: s for s in survey_sessions(photo_root, db)}
+    assert again[SESSION1]["jpg_count"] == 14 and again[SESSION1]["select_count"] == 1
+    assert [p.name for p in calls] == [SESSION1]
+
+    # 删除的文件夹从缓存里清掉
+    import shutil
+    shutil.rmtree(photo_root / SESSION2)
+    assert [s["name"] for s in survey_sessions(photo_root, db)] == [SESSION1]
+    assert {r["dir_name"] for r in db.query("SELECT dir_name FROM dir_cache")} == {SESSION1, "not-a-session", "不是出门目录"}

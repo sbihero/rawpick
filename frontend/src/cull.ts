@@ -2,6 +2,8 @@
 
 import { api, imgUrl, type Issue, type Photo, type Session } from "./api.js";
 import { openExportPanel } from "./exportPanel.js";
+import { showHelp } from "./help.js";
+import { actionFor } from "./keymap.js";
 import { Preloader } from "./preload.js";
 import { h, nameList, openModal, toast } from "./util.js";
 
@@ -65,7 +67,7 @@ export class CullView {
 
   destroy(): void {
     window.clearTimeout(this.pollTimer);
-    window.clearTimeout(this.cursorTimer);
+    this.flushCursor();
     this.preloader.clear();
     for (const fn of this.cleanups) fn();
   }
@@ -95,6 +97,8 @@ export class CullView {
       this.countEl,
       filters,
       modes,
+      h("button", { class: "btn help-btn", text: "?", title: "操作说明", "aria-label": "操作说明",
+        "data-testid": "help-btn", onclick: () => this.openHelp() }),
       h("button", { class: "btn primary", text: "导出", onclick: () => this.openExport() }));
 
     this.zoomWrap.append(this.origImg);
@@ -333,13 +337,23 @@ export class CullView {
     }, () => {}).finally(() => this.exifPending.delete(p.id));
   }
 
+  private pendingCursor: number | null = null;
+
   private saveCursorSoon(): void {
     window.clearTimeout(this.cursorTimer);
     const p = this.current();
     if (!p) return;
-    this.cursorTimer = window.setTimeout(() => {
-      api.cursor(this.sid, p.id).catch(() => {});
-    }, 800);
+    this.pendingCursor = p.id;
+    this.cursorTimer = window.setTimeout(() => this.flushCursor(), 800);
+  }
+
+  /** 立即保存还没发出去的位置（切换页面、刷新、关闭标签页时调用）。 */
+  private flushCursor(): void {
+    window.clearTimeout(this.cursorTimer);
+    if (this.pendingCursor === null) return;
+    const id = this.pendingCursor;
+    this.pendingCursor = null;
+    api.cursor(this.sid, id, true).catch(() => {});
   }
 
   // ------------------------------------------------------------------ 网格
@@ -459,6 +473,11 @@ export class CullView {
     this.modalOpen = false;
   }
 
+  private openHelp(): void {
+    this.modalOpen = true;
+    showHelp(() => this.afterModal());
+  }
+
   private showIssues(): void {
     this.modalOpen = true;
     const m = openModal("扫描发现的异常", () => this.afterModal());
@@ -476,6 +495,10 @@ export class CullView {
   // ------------------------------------------------------------------ 事件
   private bindEvents(): void {
     this.on<KeyboardEvent>(document, "keydown", (e) => this.onKey(e));
+    this.on(window, "pagehide", () => this.flushCursor());
+    this.on(document, "visibilitychange", () => {
+      if (document.visibilityState === "hidden") this.flushCursor();
+    });
     this.on<MouseEvent>(this.gridEl, "click", (e) => {
       const cell = (e.target as HTMLElement).closest(".cell") as HTMLElement | null;
       if (!cell) return;
@@ -502,21 +525,30 @@ export class CullView {
       return;
     }
     if (e.metaKey || e.ctrlKey || e.altKey || e.isComposing) return;
-    const grid = this.mode === "grid";
-    switch (e.key) {
-      case "ArrowRight": this.move(1); break;
-      case "ArrowLeft": this.move(-1); break;
-      case "ArrowDown": if (!grid) return; this.move(this.gridColumns()); break;
-      case "ArrowUp": if (!grid) return; this.move(-this.gridColumns()); break;
-      case "p": case "P": this.mark(true); break;
-      case "x": case "X": this.mark(false); break;
-      case "z": case "Z": if (grid) return; this.toggleZoom(); break;
-      case "g": case "G": this.setMode("grid"); break;
-      case "e": case "E": case "Enter": this.setMode("loupe"); break;
-      case "Escape": if (!this.zoomed) return; this.exitZoom(); break;
-      default: return;
+    // Backspace 一律拦截，避免浏览器把它当成“后退”
+    if (e.code === "Backspace") e.preventDefault();
+    if (e.key === "Escape") {
+      if (this.zoomed) {
+        this.exitZoom();
+        e.preventDefault();
+      }
+      return;
     }
+    const action = actionFor(e, this.mode);
+    if (!action) return;
     e.preventDefault();
+    switch (action) {
+      case "prev": this.move(-1); break;
+      case "next": this.move(1); break;
+      case "up": this.move(-this.gridColumns()); break;
+      case "down": this.move(this.gridColumns()); break;
+      case "pick": this.mark(true); break;
+      case "unpick": this.mark(false); break;
+      case "zoom": this.toggleZoom(); break;
+      case "grid": this.setMode("grid"); break;
+      case "loupe": this.setMode("loupe"); break;
+      case "help": this.openHelp(); break;
+    }
   }
 
   private bindMouse(): void {

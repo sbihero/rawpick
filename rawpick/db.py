@@ -40,6 +40,22 @@ CREATE TABLE IF NOT EXISTS issues (
     name       TEXT NOT NULL
 );
 
+-- 首页用的目录统计缓存：目录修改时间没变就直接用上次的结果，避免每次都读几百个目录
+CREATE TABLE IF NOT EXISTS dir_cache (
+    dir_name        TEXT PRIMARY KEY,
+    dir_mtime_ns    INTEGER NOT NULL,
+    valid           INTEGER NOT NULL,     -- 是否同时有 jpg/ 和 raw/
+    jpg_mtime_ns    INTEGER,
+    jpg_count       INTEGER NOT NULL DEFAULT 0,
+    select_mtime_ns INTEGER,
+    select_count    INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS settings (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL                   -- JSON
+);
+
 CREATE TABLE IF NOT EXISTS export_jobs (
     id          INTEGER PRIMARY KEY,
     session_id  INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,

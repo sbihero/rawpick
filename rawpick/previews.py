@@ -15,6 +15,7 @@ import json
 import logging
 import os
 import queue
+import shutil
 import tempfile
 import threading
 from fractions import Fraction
@@ -158,6 +159,12 @@ class PreviewManager:
     def cache_path(self, session_id: int, photo_id: int, kind: str) -> Path:
         assert kind in KINDS
         return self.cfg.cache_dir / str(session_id) / f"{photo_id}-{kind}.jpg"
+
+    def drop_session_cache(self, session_id: int) -> None:
+        """删除一个会话的预览缓存（只动 DATA_DIR/cache 下的目录）。"""
+        d = self.cfg.cache_dir / str(int(session_id))
+        if d.is_dir() and not d.is_symlink() and d.parent == self.cfg.cache_dir:
+            shutil.rmtree(d, ignore_errors=True)
 
     def jpg_path(self, photo: dict, dir_name: str) -> Path:
         sess = session_dir(self.cfg.photo_root, dir_name)

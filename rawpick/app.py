@@ -20,10 +20,12 @@ from . import __version__
 from .config import Config
 from .db import Database
 from .exporter import ExportBusy, ExportManager, build_plan
+from .orphans import AdoptError, adopt, auto_adopt, blank_folders, find_orphans, manual_candidates
 from .previews import KINDS, PreviewManager, read_exif_only
 from .safety import UnsafePathError, session_dir
 from .scanner import (
-    count_jpgs, discover_sessions, ensure_session_row, photo_version, sync_session,
+    count_jpgs, count_select_files, ensure_session_row, photo_version, survey_sessions,
+    sync_session,
 )
 
 log = logging.getLogger("rawpick.app")
@@ -103,24 +105,34 @@ def build_app(cfg: Config) -> Starlette:
             raise ApiError(404, "会话不存在")
         return row
 
-    def session_json(row: dict) -> dict:
+    def session_json(row: dict, survey: dict | None = None) -> dict:
+        """survey 是首页扫描得到的统计（JPG 张数、select/ 文件数），没有时当场计算。"""
         counts = db.query_one(
             "SELECT COUNT(*) AS total, COALESCE(SUM(picked), 0) AS picked FROM photos WHERE session_id = ?",
             (row["id"],),
         )
         scanned = row["last_scan_at"] is not None
         total = counts["total"]
-        if not scanned:
+        if survey is None:
             try:
-                total = count_jpgs(session_dir(cfg.photo_root, row["dir_name"]))
+                path = session_dir(cfg.photo_root, row["dir_name"])
+                survey = {"jpg_count": count_jpgs(path) if not scanned else total,
+                          "select_count": count_select_files(path)}
             except OSError:
-                total = 0
+                survey = {"jpg_count": 0, "select_count": 0}
+        if not scanned:
+            total = survey["jpg_count"]
+        select_count = survey["select_count"]
+        # select/ 里有文件就算已导出（包括不是用 rawpick 导出的）
+        status = "exported" if select_count > 0 else ("opened" if scanned else "new")
         return {
             "id": row["id"],
             "name": row["dir_name"],
             "scanned": scanned,
             "total": total,
             "picked": counts["picked"],
+            "select_count": select_count,
+            "status": status,
             "last_export_at": row["last_export_at"],
             "cursor": row["cursor_photo_id"],
         }
@@ -139,11 +151,55 @@ def build_app(cfg: Config) -> Starlette:
     def list_sessions(request: Request, body: Any) -> dict:
         if not cfg.photo_root.is_dir():
             raise ApiError(500, f"照片根目录不存在：{cfg.photo_root}")
+        survey = survey_sessions(cfg.photo_root, db)
+        names = [i["name"] for i in survey]
+        # 先尝试把改名前的记录自动接到新文件夹上（设置里可以关掉）
+        if read_settings().get("auto_adopt", True):
+            adopted, unmatched = auto_adopt(cfg, db, names)
+        else:
+            adopted, unmatched = [], len(find_orphans(db, names))
         out = []
-        for name in discover_sessions(cfg.photo_root):
-            sid = ensure_session_row(db, name)
-            out.append(session_json(get_session(sid)))
-        return {"root": str(cfg.photo_root), "sessions": out}
+        for info in survey:
+            sid = ensure_session_row(db, info["name"])
+            out.append(session_json(get_session(sid), info))
+        return {"root": str(cfg.photo_root), "sessions": out, "adopted": adopted, "unmatched": unmatched}
+
+    # ------------------------------------------------------------ 找回标记（手动模式）
+    def folder_names() -> list[str]:
+        if not cfg.photo_root.is_dir():
+            raise ApiError(500, f"照片根目录不存在：{cfg.photo_root}")
+        return [i["name"] for i in survey_sessions(cfg.photo_root, db)]
+
+    @api
+    def list_orphans(request: Request, body: Any) -> dict:
+        return {"orphans": manual_candidates(cfg, db, folder_names())}
+
+    @api
+    def adopt_orphan(request: Request, body: Any) -> dict:
+        sid = request.path_params["sid"]
+        target = (body or {}).get("target")
+        if not isinstance(target, str) or not target:
+            raise ApiError(400, "需要 target：要关联到的文件夹名")
+        names = folder_names()
+        if sid not in {o["id"] for o in find_orphans(db, names)}:
+            raise ApiError(400, "这条记录不是孤立记录（它的文件夹还在）")
+        if target not in blank_folders(db, names):
+            raise ApiError(400, "目标文件夹不存在，或者已经有标记了")
+        try:
+            adopt(db, sid, target)
+        except AdoptError as e:
+            raise ApiError(400, str(e))
+        return {"ok": True, "session": session_json(get_session(sid))}
+
+    @api
+    def delete_orphan(request: Request, body: Any) -> dict:
+        """删除一条孤立记录（文件夹已经不在了）：标记、导出记录、预览缓存。磁盘上的照片不受影响。"""
+        sid = request.path_params["sid"]
+        if sid not in {o["id"] for o in find_orphans(db, folder_names())}:
+            raise ApiError(400, "这条记录不是孤立记录（它的文件夹还在），不能删除")
+        db.execute("DELETE FROM sessions WHERE id = ?", (sid,))
+        previews.drop_session_cache(sid)
+        return {"ok": True}
 
     @api
     def open_session(request: Request, body: Any) -> dict:
@@ -260,7 +316,49 @@ def build_app(cfg: Config) -> Starlette:
     @api
     def health(request: Request, body: Any) -> dict:
         return {"ok": True, "version": __version__, "photo_root": str(cfg.photo_root),
-                "photo_root_exists": cfg.photo_root.is_dir()}
+                "photo_root_exists": cfg.photo_root.is_dir(), "data_dir": str(cfg.data_dir)}
+
+    # ------------------------------------------------------------ 设置（存服务器，各设备共用）
+    SETTING_KEYS = {"shortcuts", "auto_adopt"}
+
+    def validate_setting(key: str, value: Any) -> None:
+        if key == "auto_adopt" and not isinstance(value, bool):
+            raise ApiError(400, "auto_adopt 需要 true 或 false")
+        if key == "shortcuts":
+            ok = isinstance(value, dict) and len(value) <= 50 and all(
+                isinstance(k, str) and len(k) <= 40 and isinstance(v, list) and len(v) <= 10
+                and all(isinstance(x, str) and 0 < len(x) <= 40 for x in v)
+                for k, v in value.items()
+            )
+            if not ok:
+                raise ApiError(400, "快捷键设置格式不对")
+
+    def read_settings() -> dict:
+        rows = db.query("SELECT key, value FROM settings")
+        return {r["key"]: json.loads(r["value"]) for r in rows if r["key"] in SETTING_KEYS}
+
+    @api
+    def get_settings(request: Request, body: Any) -> dict:
+        return read_settings()
+
+    @api
+    def put_settings(request: Request, body: Any) -> dict:
+        """部分更新：只改请求里出现的项；值为 null 表示恢复默认。"""
+        if not isinstance(body, dict):
+            raise ApiError(400, "需要 JSON 对象")
+        for key, value in body.items():
+            if key not in SETTING_KEYS:
+                raise ApiError(400, f"未知设置项：{key}")
+            if value is not None:
+                validate_setting(key, value)
+        with db.transaction() as conn:
+            for key, value in body.items():
+                if value is None:
+                    conn.execute("DELETE FROM settings WHERE key = ?", (key,))
+                else:
+                    conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+                                 (key, json.dumps(value, ensure_ascii=False)))
+        return read_settings()
 
     async def index(request: Request) -> Response:
         return FileResponse(STATIC_DIR / "index.html", headers={"Cache-Control": "no-cache"})
@@ -278,7 +376,12 @@ def build_app(cfg: Config) -> Starlette:
     routes = [
         Route("/", index),
         Route("/api/health", health),
+        Route("/api/settings", get_settings, methods=["GET"]),
+        Route("/api/settings", put_settings, methods=["PUT"]),
         Route("/api/sessions", list_sessions),
+        Route("/api/orphans", list_orphans),
+        Route("/api/orphans/{sid:int}/adopt", adopt_orphan, methods=["POST"]),
+        Route("/api/orphans/{sid:int}", delete_orphan, methods=["DELETE"]),
         Route("/api/sessions/{sid:int}/open", open_session, methods=["POST"]),
         Route("/api/sessions/{sid:int}/photos", list_photos),
         Route("/api/sessions/{sid:int}/issues", list_issues),

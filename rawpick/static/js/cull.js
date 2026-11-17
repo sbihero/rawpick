@@ -1,6 +1,8 @@
 // 筛选界面：单张 / 网格、标记、过滤、键盘与触屏、预加载、缩放。
 import { api, imgUrl } from "./api.js";
 import { openExportPanel } from "./exportPanel.js";
+import { showHelp } from "./help.js";
+import { actionFor } from "./keymap.js";
 import { Preloader } from "./preload.js";
 import { h, nameList, openModal, toast } from "./util.js";
 const FILTER_LABEL = { all: "全部", picked: "已选", unpicked: "未选" };
@@ -59,7 +61,7 @@ export class CullView {
     }
     destroy() {
         window.clearTimeout(this.pollTimer);
-        window.clearTimeout(this.cursorTimer);
+        this.flushCursor();
         this.preloader.clear();
         for (const fn of this.cleanups)
             fn();
@@ -80,7 +82,8 @@ export class CullView {
             modes.append(b);
         }
         this.issuesBtn.addEventListener("click", () => this.showIssues());
-        const header = h("header", { class: "topbar" }, h("a", { class: "btn back", href: "#/", text: "‹ 返回" }), this.titleEl, h("div", { class: "spacer" }), this.progressEl, this.issuesBtn, this.countEl, filters, modes, h("button", { class: "btn primary", text: "导出", onclick: () => this.openExport() }));
+        const header = h("header", { class: "topbar" }, h("a", { class: "btn back", href: "#/", text: "‹ 返回" }), this.titleEl, h("div", { class: "spacer" }), this.progressEl, this.issuesBtn, this.countEl, filters, modes, h("button", { class: "btn help-btn", text: "?", title: "操作说明", "aria-label": "操作说明",
+            "data-testid": "help-btn", onclick: () => this.openHelp() }), h("button", { class: "btn primary", text: "导出", onclick: () => this.openExport() }));
         this.zoomWrap.append(this.origImg);
         this.stage.append(this.mainImg, this.zoomWrap, this.zoomNote, this.emptyEl);
         const info = h("div", { class: "infobar" }, h("div", { class: "info-left" }, this.nameEl, this.posEl, this.badgesEl), this.exifEl);
@@ -317,14 +320,23 @@ export class CullView {
                 this.exifEl.textContent = this.exifText(p);
         }, () => { }).finally(() => this.exifPending.delete(p.id));
     }
+    pendingCursor = null;
     saveCursorSoon() {
         window.clearTimeout(this.cursorTimer);
         const p = this.current();
         if (!p)
             return;
-        this.cursorTimer = window.setTimeout(() => {
-            api.cursor(this.sid, p.id).catch(() => { });
-        }, 800);
+        this.pendingCursor = p.id;
+        this.cursorTimer = window.setTimeout(() => this.flushCursor(), 800);
+    }
+    /** 立即保存还没发出去的位置（切换页面、刷新、关闭标签页时调用）。 */
+    flushCursor() {
+        window.clearTimeout(this.cursorTimer);
+        if (this.pendingCursor === null)
+            return;
+        const id = this.pendingCursor;
+        this.pendingCursor = null;
+        api.cursor(this.sid, id, true).catch(() => { });
     }
     // ------------------------------------------------------------------ 网格
     renderGrid() {
@@ -436,6 +448,10 @@ export class CullView {
     afterModal() {
         this.modalOpen = false;
     }
+    openHelp() {
+        this.modalOpen = true;
+        showHelp(() => this.afterModal());
+    }
     showIssues() {
         this.modalOpen = true;
         const m = openModal("扫描发现的异常", () => this.afterModal());
@@ -453,6 +469,11 @@ export class CullView {
     // ------------------------------------------------------------------ 事件
     bindEvents() {
         this.on(document, "keydown", (e) => this.onKey(e));
+        this.on(window, "pagehide", () => this.flushCursor());
+        this.on(document, "visibilitychange", () => {
+            if (document.visibilityState === "hidden")
+                this.flushCursor();
+        });
         this.on(this.gridEl, "click", (e) => {
             const cell = e.target.closest(".cell");
             if (!cell)
@@ -480,55 +501,52 @@ export class CullView {
         }
         if (e.metaKey || e.ctrlKey || e.altKey || e.isComposing)
             return;
-        const grid = this.mode === "grid";
-        switch (e.key) {
-            case "ArrowRight":
-                this.move(1);
-                break;
-            case "ArrowLeft":
+        // Backspace 一律拦截，避免浏览器把它当成“后退”
+        if (e.code === "Backspace")
+            e.preventDefault();
+        if (e.key === "Escape") {
+            if (this.zoomed) {
+                this.exitZoom();
+                e.preventDefault();
+            }
+            return;
+        }
+        const action = actionFor(e, this.mode);
+        if (!action)
+            return;
+        e.preventDefault();
+        switch (action) {
+            case "prev":
                 this.move(-1);
                 break;
-            case "ArrowDown":
-                if (!grid)
-                    return;
-                this.move(this.gridColumns());
+            case "next":
+                this.move(1);
                 break;
-            case "ArrowUp":
-                if (!grid)
-                    return;
+            case "up":
                 this.move(-this.gridColumns());
                 break;
-            case "p":
-            case "P":
+            case "down":
+                this.move(this.gridColumns());
+                break;
+            case "pick":
                 this.mark(true);
                 break;
-            case "x":
-            case "X":
+            case "unpick":
                 this.mark(false);
                 break;
-            case "z":
-            case "Z":
-                if (grid)
-                    return;
+            case "zoom":
                 this.toggleZoom();
                 break;
-            case "g":
-            case "G":
+            case "grid":
                 this.setMode("grid");
                 break;
-            case "e":
-            case "E":
-            case "Enter":
+            case "loupe":
                 this.setMode("loupe");
                 break;
-            case "Escape":
-                if (!this.zoomed)
-                    return;
-                this.exitZoom();
+            case "help":
+                this.openHelp();
                 break;
-            default: return;
         }
-        e.preventDefault();
     }
     bindMouse() {
         // 单击图片放大到点击位置；放大后拖动平移，单击（不拖动）退出

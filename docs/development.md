@@ -11,11 +11,16 @@ rawpick/                 Python 包（后端 + 编译好的前端）
   scanner.py             发现出门目录、配对、增量同步
   previews.py            预览生成、EXIF、后台队列
   exporter.py            导出清单与拷贝任务
+  orphans.py             文件夹改名后接回标记（自动 / 手动）
   safety.py              照片目录里唯一的写入口
   static/                index.html、style.css、js/（tsc 编译输出，提交到仓库）
 frontend/                前端 TypeScript 源码
   src/main.ts            路由
-  src/home.ts            首页
+  src/home.ts            首页：解析 yyyymmdd_主题、搜索、筛选、排序、卡片 / 列表
+  src/settings.ts        设置页：快捷键、找回标记、关于
+  src/orphans.ts         设置页里的“找回标记”
+  src/keymap.ts          快捷键：动作定义、默认按键、匹配、显示名
+  src/help.ts            操作说明面板
   src/cull.ts            筛选界面：单张、网格、键盘、触屏、缩放
   src/preload.ts         预加载窗口
   src/exportPanel.ts     导出面板

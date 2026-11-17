@@ -73,6 +73,82 @@ def count_jpgs(session_path: Path) -> int:
         )
 
 
+def _quick_subdir(session_path: Path, name: str) -> Path | None:
+    """先直接试小写名字（最常见），不行再大小写不敏感地找。"""
+    p = session_path / name
+    if p.is_dir() and not p.is_symlink():
+        return p
+    return find_subdir(session_path, name)
+
+
+def _mtime(path: Path) -> int | None:
+    try:
+        return path.stat().st_mtime_ns
+    except OSError:
+        return None
+
+
+def count_select_files(session_path: Path) -> int:
+    """select/ 里的正式文件数（不含 . 开头的临时文件）。"""
+    d = session_path / "select"
+    if not d.is_dir() or d.is_symlink():
+        return 0
+    with os.scandir(d) as it:
+        return sum(1 for e in it if not e.name.startswith(".") and e.is_file(follow_symlinks=False))
+
+
+def survey_sessions(photo_root: Path, db: Database) -> list[dict]:
+    """首页用：列出所有出门目录，带 JPG 张数和 select/ 文件数。
+
+    结果按目录修改时间缓存在 dir_cache：目录没变就不重新读，
+    文件夹多、硬盘在休眠时也不会每次都把所有目录读一遍。
+    """
+    cache = {r["dir_name"]: r for r in db.query("SELECT * FROM dir_cache")}
+    out: list[dict] = []
+    updates: list[dict] = []
+    seen: set[str] = set()
+    with os.scandir(photo_root) as it:
+        entries = [e for e in it if not e.name.startswith(".") and e.is_dir(follow_symlinks=False)]
+    for e in entries:
+        try:
+            dir_mtime = e.stat(follow_symlinks=False).st_mtime_ns
+        except OSError:
+            continue
+        seen.add(e.name)
+        sess = Path(e.path)
+        old = cache.get(e.name)
+        row = dict(old) if old else None
+        if row is None or row["dir_mtime_ns"] != dir_mtime:
+            valid = bool(_quick_subdir(sess, "jpg") and _quick_subdir(sess, "raw"))
+            row = {"dir_name": e.name, "dir_mtime_ns": dir_mtime, "valid": int(valid),
+                   "jpg_mtime_ns": None, "jpg_count": 0, "select_mtime_ns": None, "select_count": 0}
+        if row["valid"]:
+            jpg_dir = _quick_subdir(sess, "jpg")
+            jm = _mtime(jpg_dir) if jpg_dir else None
+            if jm != row["jpg_mtime_ns"]:
+                row["jpg_mtime_ns"] = jm
+                row["jpg_count"] = count_jpgs(sess) if jm is not None else 0
+            sm = _mtime(sess / "select")
+            if sm != row["select_mtime_ns"]:
+                row["select_mtime_ns"] = sm
+                row["select_count"] = count_select_files(sess) if sm is not None else 0
+            out.append({"name": e.name, "jpg_count": row["jpg_count"], "select_count": row["select_count"]})
+        if old is None or any(old[k] != row[k] for k in row):
+            updates.append(row)
+
+    with db.transaction() as conn:
+        conn.executemany(
+            "INSERT OR REPLACE INTO dir_cache (dir_name, dir_mtime_ns, valid, jpg_mtime_ns, jpg_count,"
+            " select_mtime_ns, select_count) VALUES (:dir_name, :dir_mtime_ns, :valid, :jpg_mtime_ns,"
+            " :jpg_count, :select_mtime_ns, :select_count)",
+            updates,
+        )
+        for name in set(cache) - seen:
+            conn.execute("DELETE FROM dir_cache WHERE dir_name = ?", (name,))
+    out.sort(key=lambda s: s["name"].lower(), reverse=True)
+    return out
+
+
 def _list_dir(directory: Path, exts: tuple[str, ...], label: str,
               issues: list[tuple[str, str]]) -> dict[str, list[FileInfo]]:
     groups: dict[str, list[FileInfo]] = defaultdict(list)

@@ -24,8 +24,33 @@ export interface Session {
   scanned: boolean;
   total: number;
   picked: number;
+  select_count: number;
+  /** new：没打开过；opened：打开过、select/ 里还没有文件；exported：select/ 里有文件 */
+  status: "new" | "opened" | "exported";
   last_export_at: number | null;
   cursor: number | null;
+}
+
+export interface Settings {
+  shortcuts?: Record<string, string[]>;
+  auto_adopt?: boolean;
+}
+
+export interface Orphan {
+  id: number;
+  name: string;
+  photos: number;
+  picked: number;
+  last_export_at: number | null;
+  candidates: { name: string; overlap: number; count: number }[];
+}
+
+export interface Health {
+  ok: boolean;
+  version: string;
+  photo_root: string;
+  photo_root_exists: boolean;
+  data_dir: string;
 }
 
 export interface Issue {
@@ -75,9 +100,10 @@ export class ApiError extends Error {
   }
 }
 
-async function req<T>(method: string, url: string, body?: unknown): Promise<T> {
+async function req<T>(method: string, url: string, body?: unknown, keepalive = false): Promise<T> {
   const r = await fetch(url, {
     method,
+    keepalive,
     headers: body === undefined ? {} : { "Content-Type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
@@ -87,15 +113,25 @@ async function req<T>(method: string, url: string, body?: unknown): Promise<T> {
 }
 
 export const api = {
-  sessions: () => req<{ root: string; sessions: Session[] }>("GET", "/api/sessions"),
+  health: () => req<Health>("GET", "/api/health"),
+  settings: () => req<Settings>("GET", "/api/settings"),
+  saveSettings: (patch: Record<string, unknown>) => req<Settings>("PUT", "/api/settings", patch),
+  sessions: () =>
+    req<{ root: string; sessions: Session[]; adopted?: { from: string; to: string }[]; unmatched?: number }>(
+      "GET", "/api/sessions"),
+  orphans: () => req<{ orphans: Orphan[] }>("GET", "/api/orphans"),
+  adopt: (sid: number, target: string) =>
+    req<{ ok: boolean }>("POST", `/api/orphans/${sid}/adopt`, { target }),
+  deleteOrphan: (sid: number) => req<{ ok: boolean }>("DELETE", `/api/orphans/${sid}`),
   open: (sid: number) =>
     req<{ session: Session; scan: { photos: number; added: number; removed: number; issues: number } }>(
       "POST", `/api/sessions/${sid}/open`),
   photos: (sid: number) => req<{ session: Session; photos: Photo[] }>("GET", `/api/sessions/${sid}/photos`),
   issues: (sid: number) => req<{ issues: Issue[] }>("GET", `/api/sessions/${sid}/issues`),
   status: (sid: number) => req<Status>("GET", `/api/sessions/${sid}/status`),
-  cursor: (sid: number, photoId: number) =>
-    req<{ ok: boolean }>("PUT", `/api/sessions/${sid}/cursor`, { photo_id: photoId }),
+  /** keepalive：页面关闭或刷新时也能把请求发出去 */
+  cursor: (sid: number, photoId: number, keepalive = false) =>
+    req<{ ok: boolean }>("PUT", `/api/sessions/${sid}/cursor`, { photo_id: photoId }, keepalive),
   photo: (pid: number) => req<Photo>("GET", `/api/photos/${pid}`),
   setPicked: (pid: number, picked: boolean) =>
     req<{ id: number; picked: boolean; picked_count: number }>("PUT", `/api/photos/${pid}/picked`, { picked }),
