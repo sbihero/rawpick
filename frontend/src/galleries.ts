@@ -64,19 +64,21 @@ export class GalleriesView {
           text: "还没有相册。在筛选界面里点“发布相册”，把已选的照片发给客户选。" }));
         return;
       }
-      const head = h("tr", {}, ...["标题", "客户", "出门", "照片", "客户已选", "状态", "截止", "创建"]
-        .map((t) => h("th", { text: t })));
+      // hide-sm：手机上不显示的列
+      const head = h("tr", {}, ...([["标题", ""], ["客户", ""], ["出门", "hide-sm"], ["照片", "hide-sm"],
+        ["已选", ""], ["状态", ""], ["截止", "hide-sm"], ["创建", "hide-sm"]] as [string, string][])
+        .map(([t, c]) => h("th", { class: c, text: t })));
       const rows = galleries.map((g) => {
         const tr = h("tr", { class: "row-link", "data-id": g.id },
           h("td", {}, h("a", { href: `#/g/${g.id}`, text: g.title })),
-          h("td", { text: g.client_name || "—" }),
-          h("td", { class: "muted", text: g.dir_name }),
-          h("td", { class: "num", text: String(g.counts.total) }),
+          h("td", { class: "nowrap", text: g.client_name || "—" }),
+          h("td", { class: "muted hide-sm", text: g.dir_name }),
+          h("td", { class: "num hide-sm", text: String(g.counts.total) }),
           h("td", { class: "num", text: selectedText(g) }),
-          h("td", {}, statusBadge(g),
+          h("td", { class: "status-cell" }, statusBadge(g),
             g.delivery_status === "ready" ? h("span", { class: "status gstatus-delivered", text: "已交付" }) : null),
-          h("td", { class: "nowrap", text: fmtDate(g.deadline_at) || "—" }),
-          h("td", { class: "nowrap muted", text: fmtTime(g.created_at) }));
+          h("td", { class: "nowrap hide-sm", text: fmtDate(g.deadline_at) || "—" }),
+          h("td", { class: "nowrap muted hide-sm", text: fmtTime(g.created_at) }));
         tr.addEventListener("click", (e) => {
           if (!(e.target as HTMLElement).closest("a")) location.hash = `#/g/${g.id}`;
         });
@@ -99,15 +101,12 @@ export class GalleryView {
   private main = h("main", { class: "page gallery-page" });
   private titleEl = h("div", { class: "title" });
   private badgeEl = h("span", {});
-  private openLink = h("a", { class: "btn", text: "打开客户页面", target: "_blank", rel: "noopener", hidden: true });
 
   constructor(private root: HTMLElement, private gid: number) {
     this.root.replaceChildren(
       h("header", { class: "topbar" },
         h("a", { class: "btn back", href: "#/galleries", text: "‹ 相册" }),
-        this.titleEl, this.badgeEl,
-        h("div", { class: "spacer" }),
-        this.openLink),
+        this.titleEl, this.badgeEl),
       this.main);
     this.main.append(h("p", { class: "muted", text: "正在读取……" }));
     void this.load();
@@ -162,8 +161,6 @@ export class GalleryView {
     const g = this.g!;
     this.titleEl.textContent = g.title;
     this.badgeEl.replaceChildren(statusBadge(g));
-    this.openLink.hidden = !g.link || !!g.deleted_at;
-    if (g.link) this.openLink.setAttribute("href", g.link);
     const scrollY = this.main.scrollTop;
     this.main.replaceChildren(
       this.linkSection(g),
@@ -197,9 +194,11 @@ export class GalleryView {
       "data-testid": "gallery-link" }) as HTMLInputElement;
     input.addEventListener("focus", () => input.select());
     sec.append(
-      h("div", { class: "row" }, input,
-        h("button", { class: "btn", text: "复制", onclick: () => void copy(g.link!) }),
-        h("button", { class: "btn", text: "重置链接", onclick: () => this.confirmResetLink() })),
+      h("div", { class: "row link-row" }, input,
+        h("div", { class: "row" },
+          h("button", { class: "btn", text: "复制", onclick: () => void copy(g.link!) }),
+          h("a", { class: "btn", text: "打开", href: g.link, target: "_blank", rel: "noopener" }),
+          h("button", { class: "btn", text: "重置链接", onclick: () => this.confirmResetLink() }))),
       h("p", { class: "muted small",
         text: (g.has_password ? "需要密码才能打开。" : "公开：拿到链接就能看。")
           + " 链接地址在“设置 → 客户相册”里配置。" }));

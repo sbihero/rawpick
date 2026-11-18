@@ -456,3 +456,32 @@ def test_client_delivery_and_english(browser, srv, photo_root):
     r = c.request.get(srv.client_url + href)
     assert r.body() == sorted(final.iterdir())[1].read_bytes()
     ctx.close()
+
+
+def test_admin_phone_layout(browser, srv):
+    """手机上筛选界面的顶栏只有一行，过滤、视图、发布相册收在“⋯”菜单里；各页面没有横向溢出。"""
+    ctx = browser.new_context(**PHONE)
+    c = ctx.new_page()
+    c.goto(srv.url)
+    c.click(f".session-card[data-name='{SESSION1}']")
+    c.wait_for_selector("[data-testid=name]:not(:empty)")
+    bar = c.locator(".topbar").bounding_box()
+    assert bar["height"] < 60
+    assert not c.is_visible("[data-testid=publish-btn]")
+    c.click("[data-testid=more-btn]")
+    assert c.is_visible("[data-testid=publish-btn]")
+    c.click(".topbar-extra .seg-btn:has-text('网格')")
+    assert not c.is_visible("[data-testid=publish-btn]")  # 点完自动收起
+    c.wait_for_selector(".grid:not([hidden]) .cell")
+    c.click("[data-testid=more-btn]")
+    c.click(".topbar-extra [data-filter=picked]")
+    assert "没有已选的照片" in c.text_content(".grid")
+    # 点菜单外面收起
+    c.click("[data-testid=more-btn]")
+    c.mouse.click(200, 500)
+    assert not c.is_visible("[data-testid=publish-btn]")
+    for hash_ in ("#/", "#/galleries", "#/settings"):
+        c.goto(srv.url + "/" + hash_)
+        c.wait_for_timeout(300)
+        assert c.evaluate("document.documentElement.scrollWidth") <= 390, hash_
+    ctx.close()

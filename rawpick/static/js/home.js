@@ -206,9 +206,11 @@ export class HomeView {
         return box;
     }
     table(items) {
-        const head = h("tr", {}, ...["日期", "主题", "张数", "已选", "状态", "上次导出"].map((t) => h("th", { text: t })));
+        // hide-sm：手机上不显示的列
+        const head = h("tr", {}, ...[["日期", ""], ["主题", ""], ["张数", "hide-sm"], ["已选", ""], ["状态", ""],
+            ["上次导出", "hide-sm"]].map(([t, c]) => h("th", { class: c, text: t })));
         const rows = items.map(({ s, date, topic }) => {
-            const tr = h("tr", { class: "row-link", "data-name": s.name }, h("td", { class: "nowrap", text: date ?? "—" }), h("td", {}, h("a", { href: `#/s/${s.id}`, text: topic })), h("td", { class: "num", text: this.countText(s) }), h("td", { class: "num", text: String(s.picked) }), h("td", {}, this.statusBadge(s)), h("td", { class: "nowrap muted", text: s.last_export_at ? fmtTime(s.last_export_at) : "" }));
+            const tr = h("tr", { class: "row-link", "data-name": s.name }, h("td", { class: "nowrap", text: date ?? "—" }), h("td", {}, h("a", { href: `#/s/${s.id}`, text: topic })), h("td", { class: "num hide-sm", text: this.countText(s) }), h("td", { class: "num", text: String(s.picked) }), h("td", { class: "nowrap" }, this.statusBadge(s)), h("td", { class: "nowrap muted hide-sm", text: s.last_export_at ? fmtTime(s.last_export_at) : "" }));
             tr.addEventListener("click", (e) => {
                 if (!e.target.closest("a"))
                     location.hash = `#/s/${s.id}`;

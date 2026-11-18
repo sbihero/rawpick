@@ -49,6 +49,12 @@ html, body {
 .spacer { flex: 1; }
 .count { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .progress { font-size: 12px; white-space: nowrap; }
+/* 宽屏：次要按钮直接排在顶栏里；手机上收进“⋯”菜单（见文件末尾） */
+.topbar-extra { display: contents; }
+.more-btn { display: none; position: relative; }
+.more-btn.alert::after {
+  content: ""; position: absolute; top: 4px; right: 4px; width: 7px; height: 7px; border-radius: 50%; background: var(--warn);
+}
 
 .btn {
   appearance: none;
@@ -353,4 +359,37 @@ a.ctl { display: inline-flex; align-items: center; justify-content: center; text
   .infobar { padding: 4px 10px; }
   .exif { display: none; }
   .client-top .btn { padding: 6px 10px; }
+}
+
+/* 手机：筛选界面顶栏只留一行（返回、标题、计数、⋯、导出），其余收进下拉菜单 */
+@media (max-width: 600px) {
+  .topbar.has-more { flex-wrap: nowrap; position: relative; }
+  .topbar.has-more .spacer { display: none; }
+  .topbar.has-more .title { flex: 1 1 auto; min-width: 0; max-width: none; }
+  .topbar.has-more .count { font-size: 13px; }
+  .more-btn { display: inline-flex; align-items: center; justify-content: center; min-width: 40px; font-size: 18px; line-height: 1; }
+  .topbar-extra {
+    display: none; position: absolute; top: calc(100% + 4px); right: 8px; z-index: 15;
+    flex-direction: column; align-items: stretch; gap: 10px; min-width: 230px; padding: 12px;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 8px 24px rgba(0, 0, 0, .5);
+  }
+  .topbar-extra.open { display: flex; }
+  .topbar-extra .seg { display: flex; }
+  .topbar-extra .seg-btn { flex: 1; padding: 8px 6px; }
+  .topbar-extra > .btn { padding: 9px 12px; text-align: left; }
+  .topbar-extra > .help-btn::after { content: " 操作说明"; }
+  .topbar-extra .progress:empty { display: none; }
+  .page { padding: 12px; }
+  .link-row { flex-wrap: wrap; }
+  .link-row .link-input { flex: 1 1 100%; }
+  .gallery-page .title { max-width: 50vw; }
+  .hide-sm { display: none; }
+  .session-table th, .session-table td { padding: 8px 6px; font-size: 13px; }
+  .session-table th { white-space: nowrap; }
+  .status-cell .status { display: inline-block; margin: 2px 0; }
+  .status-cell .status + .status { margin-left: 0; }
+  .form .row { flex-wrap: wrap; }
+  .input.narrow { width: 150px; }
+  .modal-body { padding: 12px 14px; }
+  .modal-actions { padding: 10px 14px; }
 }

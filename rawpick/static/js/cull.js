@@ -27,6 +27,10 @@ export class CullView {
     progressEl = h("span", { class: "progress muted" });
     issuesBtn = h("button", { class: "btn small warn-btn", hidden: true });
     countEl = h("span", { class: "count", "data-testid": "count" });
+    /** 次要按钮：宽屏时排在顶栏里，手机上收进“⋯”菜单 */
+    extraEl = h("div", { class: "topbar-extra", "data-testid": "topbar-extra" });
+    moreBtn = h("button", { class: "btn more-btn", text: "⋯", title: "更多", "aria-label": "更多",
+        "aria-expanded": "false", "data-testid": "more-btn" });
     filterBtns = {};
     modeBtns = {};
     constructor(root, sid) {
@@ -79,8 +83,18 @@ export class CullView {
             modes.append(b);
         }
         this.issuesBtn.addEventListener("click", () => this.showIssues());
-        const header = h("header", { class: "topbar" }, h("a", { class: "btn back", href: "#/", text: "‹ 返回" }), this.titleEl, h("div", { class: "spacer" }), this.progressEl, this.issuesBtn, this.countEl, filters, modes, h("button", { class: "btn help-btn", text: "?", title: "操作说明", "aria-label": "操作说明",
-            "data-testid": "help-btn", onclick: () => this.openHelp() }), h("button", { class: "btn", text: "发布相册", "data-testid": "publish-btn", onclick: () => this.openPublish() }), h("button", { class: "btn primary", text: "导出", onclick: () => this.openExport() }));
+        this.extraEl.append(this.progressEl, this.issuesBtn, filters, modes, h("button", { class: "btn help-btn", text: "?", title: "操作说明", "aria-label": "操作说明",
+            "data-testid": "help-btn", onclick: () => this.openHelp() }), h("button", { class: "btn", text: "发布相册", "data-testid": "publish-btn", onclick: () => this.openPublish() }));
+        this.moreBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            this.setMenu(!this.extraEl.classList.contains("open"));
+        });
+        // 菜单里点了按钮就收起
+        this.extraEl.addEventListener("click", (e) => {
+            if (e.target.closest("button"))
+                this.setMenu(false);
+        });
+        const header = h("header", { class: "topbar has-more" }, h("a", { class: "btn back", href: "#/", text: "‹ 返回" }), this.titleEl, h("div", { class: "spacer" }), this.countEl, this.extraEl, this.moreBtn, h("button", { class: "btn primary", text: "导出", onclick: () => this.openExport() }));
         const body = h("div", { class: "body" });
         this.root.replaceChildren(header, body);
         this.root.classList.add("cull-root");
@@ -88,7 +102,28 @@ export class CullView {
         this.titleEl.textContent = "正在扫描……";
         return body;
     }
+    setMenu(open) {
+        this.extraEl.classList.toggle("open", open);
+        this.moreBtn.setAttribute("aria-expanded", String(open));
+    }
     bindEvents() {
+        // 点菜单以外的地方、按 Esc 时收起“⋯”菜单
+        const onDocClick = (e) => {
+            if (this.extraEl.classList.contains("open") && !this.extraEl.contains(e.target))
+                this.setMenu(false);
+        };
+        const onEsc = (e) => {
+            if (e.key === "Escape" && this.extraEl.classList.contains("open")) {
+                this.setMenu(false);
+                e.stopPropagation();
+            }
+        };
+        document.addEventListener("click", onDocClick);
+        document.addEventListener("keydown", onEsc, true);
+        this.cleanups.push(() => {
+            document.removeEventListener("click", onDocClick);
+            document.removeEventListener("keydown", onEsc, true);
+        });
         const onHide = () => this.flushCursor();
         const onVis = () => { if (document.visibilityState === "hidden")
             this.flushCursor(); };
@@ -124,6 +159,7 @@ export class CullView {
             this.issues = r.issues;
             this.issuesBtn.hidden = r.issues.length === 0;
             this.issuesBtn.textContent = `异常 ${r.issues.length}`;
+            this.moreBtn.classList.toggle("alert", r.issues.length > 0);
         }, () => { });
     }
     async pollStatus() {
