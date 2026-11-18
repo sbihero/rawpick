@@ -24,6 +24,10 @@ class Config:
     preview_size: int = 2560
     preview_workers: int = 2
     umask: int | None = None
+    client_port: int = 8081               # 客户端（相册）端口；0 表示不启动
+    gallery_preview_size: int = 2048      # 给客户看的预览长边
+    gallery_thumb_size: int = 400
+    watermark_font: Path | None = None    # 水印字体；不设置时自动找系统里的中文字体
 
     @property
     def cache_dir(self) -> Path:
@@ -32,6 +36,10 @@ class Config:
     @property
     def db_path(self) -> Path:
         return self.data_dir / "rawpick.db"
+
+    @property
+    def galleries_dir(self) -> Path:
+        return self.data_dir / "galleries"
 
 
 def _parse_exts(value: str) -> tuple[str, ...]:
@@ -49,7 +57,9 @@ def load_config(env: Mapping[str, str] = os.environ) -> Config:
 
     PHOTO_ROOT       照片根目录，下面每个一级子目录是一次出门（默认 ./photos）
     DATA_DIR         数据库和预览缓存目录（默认 ./data）
-    HOST / PORT      监听地址（默认 0.0.0.0:8080）
+    HOST / PORT      管理员端监听地址（默认 0.0.0.0:8080）
+    CLIENT_PORT      客户端（相册）端口（默认 8081，设为 0 不启动）
+    WATERMARK_FONT   水印字体文件（默认自动找系统里的中文字体）
     RAW_EXTS         RAW 扩展名白名单，逗号分隔（默认 arw,cr2,cr3,nef,raf,dng,orf,rw2）
     PREVIEW_WORKERS  后台生成预览的线程数（默认 CPU 核数，最多 4）
     UMASK            新建文件的 umask，八进制（Unraid 建议 000）
@@ -66,4 +76,6 @@ def load_config(env: Mapping[str, str] = os.environ) -> Config:
         preview_size=int(env.get("PREVIEW_SIZE", "2560")),
         preview_workers=max(1, int(env.get("PREVIEW_WORKERS", str(min(4, cpu))))),
         umask=int(umask_raw, 8) if umask_raw else None,
+        client_port=int(env.get("CLIENT_PORT", "8081") or 0),
+        watermark_font=Path(env["WATERMARK_FONT"]) if env.get("WATERMARK_FONT") else None,
     )

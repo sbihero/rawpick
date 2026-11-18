@@ -28,6 +28,7 @@ done
 PHOTO_ROOT="/mnt/user/photos"
 APPDATA="/mnt/user/appdata/rawpick"
 PORT=8080
+CLIENT_PORT=8081
 PREVIEW_WORKERS=4
 PUID=99
 PGID=100
@@ -95,11 +96,19 @@ if [[ "$MODE" == build ]]; then
     echo "==> 没有找到 Unraid 模板目录 $TEMPLATE_DIR，跳过模板安装"
   elif [[ -f "$TEMPLATE_FILE" ]]; then
     echo "==> 模板已存在，保留你的设置：$TEMPLATE_FILE"
+    if ! grep -q 'Target="8081"' "$TEMPLATE_FILE"; then
+      echo
+      echo "注意：0.3.0 起多了一个客户端端口（容器内 8081，给客户相册用），你的模板里还没有。"
+      echo "  在 Docker 页面点 $CONTAINER_NAME → Edit → 页面底部 Add another Path, Port, Variable, Label or Device："
+      echo "  Config Type 选 Port，Name 填 客户端端口，Container Port 填 8081，Host Port 填 $CLIENT_PORT，Connection Type 选 TCP → Add → Apply。"
+      echo "  不加也能用，只是客户相册打不开。"
+    fi
   else
     sed -e "s|<Name>rawpick</Name>|<Name>$(val "$CONTAINER_NAME")</Name>|" \
         -e "s|<Repository>rawpick</Repository>|<Repository>$(val "$IMAGE_NAME")</Repository>|" \
         -e "s|<ExtraParams>--user 99:100</ExtraParams>|<ExtraParams>--user $(val "$PUID:$PGID")</ExtraParams>|" \
-        -e "/Type=\"Port\"/s|>8080</Config>|>$(val "$PORT")</Config>|" \
+        -e "/Target=\"8080\"/s|>8080</Config>|>$(val "$PORT")</Config>|" \
+        -e "/Target=\"8081\"/s|>8081</Config>|>$(val "$CLIENT_PORT")</Config>|" \
         -e "s|>/mnt/user/photos</Config>|>$(val "$PHOTO_ROOT")</Config>|" \
         -e "s|>/mnt/user/appdata/rawpick</Config>|>$(val "$APPDATA")</Config>|" \
         -e "/Target=\"PREVIEW_WORKERS\"/s|>4</Config>|>$(val "$PREVIEW_WORKERS")</Config>|" \
@@ -137,6 +146,7 @@ docker run -d \
   --restart unless-stopped \
   --user "$PUID:$PGID" \
   -p "$PORT:8080" \
+  -p "$CLIENT_PORT:8081" \
   -v "$PHOTO_ROOT:/photos" \
   -v "$APPDATA:/data" \
   -e UMASK="$UMASK" \
@@ -159,6 +169,7 @@ for _ in $(seq 1 30); do
     echo " 完成"
     IP=$(hostname -I 2>/dev/null | awk '{print $1}')
     echo "==> 打开 http://${IP:-<Unraid IP>}:$PORT"
+    echo "==> 客户相册端口：$CLIENT_PORT"
     exit 0
   fi
   echo -n "."

@@ -104,10 +104,10 @@ def test_copy_error_recorded_and_part_cleaned(setup, cfg, db, monkeypatch):
     mgr = ExportManager(cfg, db)
     real = mgr._copy_one
 
-    def flaky(src, s, name, progress):
+    def flaky(src, s, name, progress, dest="select"):
         if name == "DSC00001.ARW":
             raise OSError("模拟磁盘错误")
-        return real(src, s, name, progress)
+        return real(src, s, name, progress, dest)
 
     monkeypatch.setattr(mgr, "_copy_one", flaky)
     job = mgr.run_sync(sid)

@@ -34,6 +34,8 @@ export interface Session {
 export interface Settings {
   shortcuts?: Record<string, string[]>;
   auto_adopt?: boolean;
+  watermark_text?: string;
+  client_base_url?: string;
 }
 
 export interface Orphan {
@@ -51,6 +53,8 @@ export interface Health {
   photo_root: string;
   photo_root_exists: boolean;
   data_dir: string;
+  client_port: number;
+  watermark_font: string;
 }
 
 export interface Issue {
@@ -59,6 +63,7 @@ export interface Issue {
 }
 
 export interface Plan {
+  dest: string;
   picked: number;
   copy: string[];
   skip: string[];
@@ -92,6 +97,68 @@ export interface Status {
   preview: { total: number; ready: number; failed: number };
   export_job: number | null;
   picked: number;
+}
+
+export interface GalleryPhoto {
+  id: number;
+  name: string;
+  raw: string | null;
+  ready: boolean;
+  error: string | null;
+  selected: boolean;
+  note: string;
+}
+
+export interface Gallery {
+  id: number;
+  code: string;
+  title: string;
+  client_name: string;
+  message: string;
+  lang: "auto" | "zh" | "en";
+  limit: number | null;
+  limit_mode: "block" | "warn";
+  watermark: boolean;
+  watermark_text: string;
+  has_password: boolean;
+  deadline_at: number | null;
+  delete_at: number | null;
+  /** building：正在生成；open：客户可以选；submitted：客户已提交 */
+  status: "building" | "open" | "submitted";
+  locked: "submitted" | "deadline" | null;
+  build_error: string | null;
+  created_at: number;
+  published_at: number | null;
+  submitted_at: number | null;
+  session_id: number | null;
+  dir_name: string;
+  export_dir: string;
+  last_export_at: number | null;
+  delivery_dir: string | null;
+  delivery_status: "building" | "ready" | "failed" | null;
+  delivery_error: string | null;
+  delivered_at: number | null;
+  deleted_at: number | null;
+  counts: { total: number; ready: number; failed: number; selected: number; notes: number };
+  link: string | null;
+  /** 链接是自动拼的，而端口映射过，可能不对 */
+  link_uncertain: boolean;
+  photos?: GalleryPhoto[];
+  delivery?: { id: number; name: string; size: number; ready: number }[];
+}
+
+/** 发布和修改相册时可以设置的项。password：字符串设置新密码，null 表示公开，不传表示不变。 */
+export interface GalleryOpts {
+  title?: string;
+  client_name?: string;
+  message?: string;
+  lang?: Gallery["lang"];
+  limit_count?: number | null;
+  limit_mode?: Gallery["limit_mode"];
+  watermark?: boolean;
+  password?: string | null;
+  deadline_at?: number | null;
+  delete_at?: number | null;
 }
 
 export class ApiError extends Error {
@@ -138,7 +205,26 @@ export const api = {
   plan: (sid: number) => req<Plan>("GET", `/api/sessions/${sid}/export/plan`),
   startExport: (sid: number) => req<{ job_id: number }>("POST", `/api/sessions/${sid}/export`),
   job: (jid: number) => req<Job>("GET", `/api/jobs/${jid}`),
+  galleries: () => req<{ galleries: Gallery[] }>("GET", "/api/galleries"),
+  createGallery: (sid: number, opts: GalleryOpts) => req<Gallery>("POST", `/api/sessions/${sid}/galleries`, opts),
+  gallery: (gid: number) => req<Gallery>("GET", `/api/galleries/${gid}`),
+  updateGallery: (gid: number, opts: GalleryOpts) => req<Gallery>("PUT", `/api/galleries/${gid}`, opts),
+  deleteGallery: (gid: number) => req<{ ok: boolean }>("DELETE", `/api/galleries/${gid}`),
+  reopenGallery: (gid: number) => req<Gallery>("POST", `/api/galleries/${gid}/reopen`),
+  resetLink: (gid: number) => req<Gallery>("POST", `/api/galleries/${gid}/reset-link`),
+  galleryPlan: (gid: number, dest: string) =>
+    req<Plan>("GET", `/api/galleries/${gid}/export/plan?dest=${encodeURIComponent(dest)}`),
+  galleryExport: (gid: number, dest: string) =>
+    req<{ job_id: number }>("POST", `/api/galleries/${gid}/export`, { dest }),
+  deliveryFolders: (gid: number) =>
+    req<{ folders: { name: string; jpg_count: number }[] }>("GET", `/api/galleries/${gid}/delivery/folders`),
+  deliver: (gid: number, folder: string) => req<Gallery>("POST", `/api/galleries/${gid}/delivery`, { folder }),
+  cancelDelivery: (gid: number) => req<Gallery>("DELETE", `/api/galleries/${gid}/delivery`),
 };
+
+export function galleryImg(gid: number, pid: number, kind: "thumb" | "preview"): string {
+  return `/api/galleries/${gid}/img/${pid}/${kind}`;
+}
 
 export function imgUrl(p: Photo, kind: "thumb" | "preview" | "original"): string {
   return `/img/${p.id}/${kind}?v=${p.v}`;

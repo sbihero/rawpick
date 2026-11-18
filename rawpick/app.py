@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import functools
 import json
 import logging
@@ -17,11 +18,14 @@ from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
 from . import __version__
+from . import gallery_store as gs
+from .client_app import build_client_app
 from .config import Config
 from .db import Database
 from .exporter import ExportBusy, ExportManager, build_plan
 from .orphans import AdoptError, adopt, auto_adopt, blank_folders, find_orphans, manual_candidates
 from .previews import KINDS, PreviewManager, read_exif_only
+from .publisher import PublishError, Publisher, default_export_dir
 from .safety import UnsafePathError, session_dir
 from .scanner import (
     count_jpgs, count_select_files, ensure_session_row, photo_version, survey_sessions,
@@ -67,6 +71,7 @@ def build_app(cfg: Config) -> Starlette:
     db = Database(cfg.db_path)
     previews = PreviewManager(cfg, db)
     exports = ExportManager(cfg, db)
+    publisher = Publisher(cfg, db, exports)
 
     # ------------------------------------------------------------ helpers
     def api(fn: Callable[..., Any]):
@@ -89,6 +94,8 @@ def build_app(cfg: Config) -> Starlette:
             except FileNotFoundError as e:
                 return JSONResponse({"error": f"文件不存在：{e}"}, status_code=404)
             except UnsafePathError as e:
+                return JSONResponse({"error": str(e)}, status_code=400)
+            except PublishError as e:
                 return JSONResponse({"error": str(e)}, status_code=400)
             except Exception as e:  # pragma: no cover
                 log.exception("请求出错 %s", request.url.path)
@@ -316,14 +323,21 @@ def build_app(cfg: Config) -> Starlette:
     @api
     def health(request: Request, body: Any) -> dict:
         return {"ok": True, "version": __version__, "photo_root": str(cfg.photo_root),
-                "photo_root_exists": cfg.photo_root.is_dir(), "data_dir": str(cfg.data_dir)}
+                "photo_root_exists": cfg.photo_root.is_dir(), "data_dir": str(cfg.data_dir),
+                "client_port": cfg.client_port, "watermark_font": str(publisher.font or "")}
 
     # ------------------------------------------------------------ 设置（存服务器，各设备共用）
-    SETTING_KEYS = {"shortcuts", "auto_adopt"}
+    SETTING_KEYS = {"shortcuts", "auto_adopt", "watermark_text", "client_base_url"}
 
     def validate_setting(key: str, value: Any) -> None:
         if key == "auto_adopt" and not isinstance(value, bool):
             raise ApiError(400, "auto_adopt 需要 true 或 false")
+        if key == "watermark_text" and not (isinstance(value, str) and 0 < len(value.strip()) <= 40):
+            raise ApiError(400, "水印文字需要 1–40 个字")
+        if key == "client_base_url" and not (
+                isinstance(value, str) and len(value) <= 200
+                and value.startswith(("http://", "https://")) and " " not in value):
+            raise ApiError(400, "客户访问地址要以 http:// 或 https:// 开头")
         if key == "shortcuts":
             ok = isinstance(value, dict) and len(value) <= 50 and all(
                 isinstance(k, str) and len(k) <= 40 and isinstance(v, list) and len(v) <= 10
@@ -360,17 +374,234 @@ def build_app(cfg: Config) -> Starlette:
                                  (key, json.dumps(value, ensure_ascii=False)))
         return read_settings()
 
+    # ------------------------------------------------------------ 客户相册
+    def watermark_text() -> str:
+        return read_settings().get("watermark_text") or gs.DEFAULT_WATERMARK
+
+    def client_base(request: Request) -> str | None:
+        base = read_settings().get("client_base_url")
+        if base:
+            return base.rstrip("/")
+        if not cfg.client_port:
+            return None
+        host = request.url.hostname or "127.0.0.1"
+        if ":" in host:  # IPv6
+            host = f"[{host}]"
+        return f"{request.url.scheme}://{host}:{cfg.client_port}"
+
+    def get_gallery(gid: int) -> dict:
+        g = gs.get(db, gid)
+        if g is None:
+            raise ApiError(404, "相册不存在")
+        return g
+
+    def gallery_json(g: dict, request: Request, detail: bool = False) -> dict:
+        base = client_base(request)
+        out = {
+            "id": g["id"], "code": g["code"], "title": g["title"], "client_name": g["client_name"],
+            "message": g["message"], "lang": g["lang"], "limit": g["limit_count"],
+            "limit_mode": g["limit_mode"], "watermark": bool(g["watermark"]),
+            "watermark_text": g["watermark_text"], "has_password": bool(g["password_hash"]),
+            "deadline_at": g["deadline_at"], "delete_at": g["delete_at"], "status": g["status"],
+            "locked": gs.lock_reason(g), "build_error": g["build_error"], "created_at": g["created_at"],
+            "published_at": g["published_at"], "submitted_at": g["submitted_at"],
+            "session_id": g["session_id"], "dir_name": publisher.current_dir(g),
+            "export_dir": g["export_dir"] or default_export_dir(g), "last_export_at": g["last_export_at"],
+            "delivery_dir": g["delivery_dir"], "delivery_status": g["delivery_status"],
+            "delivery_error": g["delivery_error"], "delivered_at": g["delivered_at"],
+            "deleted_at": g["deleted_at"], "counts": gs.counts(db, g["id"]),
+            "link": f"{base}/g/{g['token']}" if base else None,
+            # 没设置客户访问地址、而管理员端的端口又被映射过（比如 8070→8080）时，自动拼出来的客户端端口很可能不对
+            "link_uncertain": not read_settings().get("client_base_url")
+            and request.url.port is not None and request.url.port != cfg.port,
+        }
+        if detail:
+            out["photos"] = [
+                {"id": r["id"], "name": r["jpg_name"], "raw": r["raw_name"], "ready": bool(r["ready"]),
+                 "error": r["error"], "selected": bool(r["selected"]), "note": r["note"]}
+                for r in db.query("SELECT * FROM gallery_photos WHERE gallery_id = ? ORDER BY idx", (g["id"],))
+            ]
+            out["delivery"] = db.query(
+                "SELECT id, name, size, ready FROM gallery_deliveries WHERE gallery_id = ? ORDER BY idx",
+                (g["id"],))
+        return out
+
+    def parse_gallery_opts(body: Any, creating: bool) -> dict:
+        if not isinstance(body, dict):
+            raise ApiError(400, "需要 JSON 对象")
+        out: dict[str, Any] = {}
+
+        def text(key: str, maxlen: int, required: bool = False, nonempty: bool = False) -> None:
+            if key not in body:
+                if required:
+                    raise ApiError(400, f"缺少 {key}")
+                return
+            v = body[key]
+            if not isinstance(v, str) or len(v) > maxlen or (nonempty and not v.strip()):
+                raise ApiError(400, f"{key} 需要 {'1–' if nonempty else ''}{maxlen} 个字以内的文字")
+            out[key] = v.strip()
+
+        text("title", 100, required=creating, nonempty=True)
+        text("client_name", 100)
+        text("message", 2000)
+        if "lang" in body:
+            if body["lang"] not in gs.LANGS:
+                raise ApiError(400, "lang 只能是 auto / zh / en")
+            out["lang"] = body["lang"]
+        if "limit_count" in body:
+            v = body["limit_count"]
+            if v is not None and not (isinstance(v, int) and not isinstance(v, bool) and 1 <= v <= 100000):
+                raise ApiError(400, "张数上限需要是正整数，或者留空表示不限")
+            out["limit_count"] = v
+        if "limit_mode" in body:
+            if body["limit_mode"] not in gs.LIMIT_MODES:
+                raise ApiError(400, "limit_mode 只能是 block / warn")
+            out["limit_mode"] = body["limit_mode"]
+        if creating and "watermark" in body:
+            if not isinstance(body["watermark"], bool):
+                raise ApiError(400, "watermark 需要 true 或 false")
+            out["watermark"] = body["watermark"]
+        if "password" in body:
+            v = body["password"]
+            if v is not None and not (isinstance(v, str) and 1 <= len(v) <= 100):
+                raise ApiError(400, "密码需要 1–100 个字符；设为 null 表示公开")
+            out["password_hash"] = gs.hash_password(v) if v else None
+        for key in ("deadline_at", "delete_at"):
+            if key in body:
+                v = body[key]
+                if v is not None and not (isinstance(v, (int, float)) and not isinstance(v, bool) and v > 0):
+                    raise ApiError(400, f"{key} 需要是时间戳，或者 null")
+                out[key] = v
+        return out
+
+    @api
+    def list_galleries(request: Request, body: Any) -> dict:
+        rows = db.query("SELECT * FROM galleries ORDER BY created_at DESC")
+        return {"galleries": [gallery_json(g, request) for g in rows]}
+
+    @api
+    def create_gallery(request: Request, body: Any) -> dict:
+        sid = request.path_params["sid"]
+        get_session(sid)
+        opts = parse_gallery_opts(body, creating=True)
+        gid = publisher.publish(sid, opts, watermark_text())
+        return gallery_json(get_gallery(gid), request, detail=True)
+
+    @api
+    def gallery_detail(request: Request, body: Any) -> dict:
+        return gallery_json(get_gallery(request.path_params["gid"]), request, detail=True)
+
+    @api
+    def update_gallery(request: Request, body: Any) -> dict:
+        g = get_gallery(request.path_params["gid"])
+        opts = parse_gallery_opts(body, creating=False)
+        if opts:
+            cols = ", ".join(f"{k} = ?" for k in opts)
+            db.execute(f"UPDATE galleries SET {cols} WHERE id = ?", (*opts.values(), g["id"]))
+        return gallery_json(get_gallery(g["id"]), request, detail=True)
+
+    @api
+    def delete_gallery(request: Request, body: Any) -> dict:
+        publisher.delete(get_gallery(request.path_params["gid"]))
+        return {"ok": True}
+
+    @api
+    def reopen_gallery(request: Request, body: Any) -> dict:
+        g = get_gallery(request.path_params["gid"])
+        if g["status"] != "submitted":
+            raise ApiError(400, "客户还没有提交，不需要重新开放")
+        db.execute("UPDATE galleries SET status = 'open', submitted_at = NULL WHERE id = ?", (g["id"],))
+        return gallery_json(get_gallery(g["id"]), request, detail=True)
+
+    @api
+    def reset_link(request: Request, body: Any) -> dict:
+        g = get_gallery(request.path_params["gid"])
+        while True:
+            token = gs.new_token()
+            if not db.query_one("SELECT 1 FROM galleries WHERE token = ?", (token,)):
+                break
+        db.execute("UPDATE galleries SET token = ? WHERE id = ?", (token, g["id"]))
+        return gallery_json(get_gallery(g["id"]), request, detail=True)
+
+    @api
+    def gallery_image(request: Request, body: Any) -> Response:
+        g = get_gallery(request.path_params["gid"])
+        kind = request.path_params["kind"]
+        if kind not in gs.PHOTO_KINDS:
+            raise ApiError(404, "未知图片类型")
+        path = gs.photo_file(cfg.galleries_dir, g["id"], request.path_params["pid"], kind)
+        if not path.is_file():
+            raise ApiError(404, "图片不存在")
+        return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": IMMUTABLE})
+
+    def export_dest(request: Request, body: Any, g: dict) -> str:
+        dest = (body or {}).get("dest") if request.method == "POST" else request.query_params.get("dest")
+        return dest or g["export_dir"] or default_export_dir(g)
+
+    @api
+    def gallery_export_plan(request: Request, body: Any) -> dict:
+        g = get_gallery(request.path_params["gid"])
+        return publisher.export_plan(g, export_dest(request, body, g)).to_dict()
+
+    @api
+    def gallery_export(request: Request, body: Any) -> dict:
+        g = get_gallery(request.path_params["gid"])
+        dest = export_dest(request, body, g)
+        try:
+            job = publisher.start_export(g, dest)
+        except ExportBusy as e:
+            raise ApiError(409, "这次出门已有导出任务在运行", job_id=e.args[0])
+        db.execute("UPDATE galleries SET export_dir = ? WHERE id = ?", (dest, g["id"]))
+        return {"job_id": job}
+
+    @api
+    def delivery_folders(request: Request, body: Any) -> dict:
+        g = get_gallery(request.path_params["gid"])
+        try:
+            return {"folders": publisher.delivery_folders(g)}
+        except FileNotFoundError:
+            raise ApiError(404, f"出门目录不存在：{publisher.current_dir(g)}")
+
+    @api
+    def start_delivery(request: Request, body: Any) -> dict:
+        g = get_gallery(request.path_params["gid"])
+        if g["deleted_at"]:
+            raise ApiError(400, "相册文件已删除")
+        folder = (body or {}).get("folder")
+        if not isinstance(folder, str) or not folder:
+            raise ApiError(400, "需要 folder：成片所在的文件夹名")
+        publisher.start_delivery(g, folder)
+        return gallery_json(get_gallery(g["id"]), request, detail=True)
+
+    @api
+    def cancel_delivery(request: Request, body: Any) -> dict:
+        g = get_gallery(request.path_params["gid"])
+        publisher.cancel_delivery(g)
+        return gallery_json(get_gallery(g["id"]), request, detail=True)
+
     async def index(request: Request) -> Response:
         return FileResponse(STATIC_DIR / "index.html", headers={"Cache-Control": "no-cache"})
+
+    async def sweeper() -> None:
+        """每 10 分钟检查一次到期要自动删除的相册。"""
+        while True:
+            try:
+                await run_in_threadpool(publisher.sweep)
+            except Exception:  # pragma: no cover
+                log.exception("自动删除相册出错")
+            await asyncio.sleep(600)
 
     @asynccontextmanager
     async def lifespan(app: Starlette):
         exports.mark_interrupted_jobs()
         previews.start()
+        publisher.resume()
+        sweep_task = asyncio.create_task(sweeper())
         log.info("rawpick %s 启动：照片根目录 %s，数据目录 %s", __version__, cfg.photo_root, cfg.data_dir)
         try:
             yield
         finally:
+            sweep_task.cancel()
             previews.stop()
 
     routes = [
@@ -392,6 +623,19 @@ def build_app(cfg: Config) -> Starlette:
         Route("/api/photos/{pid:int}", get_photo),
         Route("/api/photos/{pid:int}/picked", set_picked, methods=["PUT"]),
         Route("/api/jobs/{jid:int}", get_job),
+        Route("/api/galleries", list_galleries),
+        Route("/api/sessions/{sid:int}/galleries", create_gallery, methods=["POST"]),
+        Route("/api/galleries/{gid:int}", gallery_detail, methods=["GET"]),
+        Route("/api/galleries/{gid:int}", update_gallery, methods=["PUT"]),
+        Route("/api/galleries/{gid:int}", delete_gallery, methods=["DELETE"]),
+        Route("/api/galleries/{gid:int}/reopen", reopen_gallery, methods=["POST"]),
+        Route("/api/galleries/{gid:int}/reset-link", reset_link, methods=["POST"]),
+        Route("/api/galleries/{gid:int}/img/{pid:int}/{kind:str}", gallery_image),
+        Route("/api/galleries/{gid:int}/export/plan", gallery_export_plan),
+        Route("/api/galleries/{gid:int}/export", gallery_export, methods=["POST"]),
+        Route("/api/galleries/{gid:int}/delivery/folders", delivery_folders),
+        Route("/api/galleries/{gid:int}/delivery", start_delivery, methods=["POST"]),
+        Route("/api/galleries/{gid:int}/delivery", cancel_delivery, methods=["DELETE"]),
         Route("/img/{pid:int}/{kind:str}", image),
         Mount("/static", RevalidatingStatic(directory=STATIC_DIR), name="static"),
     ]
@@ -399,4 +643,6 @@ def build_app(cfg: Config) -> Starlette:
     app.state.db = db
     app.state.previews = previews
     app.state.exports = exports
+    app.state.publisher = publisher
+    app.state.client_app = build_client_app(cfg.galleries_dir, db)
     return app

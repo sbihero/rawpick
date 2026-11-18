@@ -83,7 +83,9 @@ def test_no_other_writes_into_photo_dirs():
         r"""open\([^)]*["'](w|a|x)b?["']|\.unlink\(|os\.remove\(|os\.rename\(|os\.replace\(|"""
         r"""shutil\.(move|rmtree|copy)|\.write_bytes\(|\.write_text\(|\.rmdir\("""
     )
-    allowed = {"safety.py", "previews.py"}  # previews.py 只写 DATA_DIR 下的缓存
+    # 以下文件只写 DATA_DIR：previews.py 写预览缓存；gallery_store.py、publisher.py 写相册包；
+    # client_app.py 的 zf.open(..., "w") 是往内存里的 zip 写，不是文件
+    allowed = {"safety.py", "previews.py", "gallery_store.py", "publisher.py", "client_app.py"}
     offenders = []
     for py in pkg.glob("*.py"):
         if py.name in allowed:
@@ -92,3 +94,45 @@ def test_no_other_writes_into_photo_dirs():
             if pattern.search(line):
                 offenders.append(f"{py.name}:{i}: {line.strip()}")
     assert offenders == []
+
+
+def test_client_side_never_touches_photo_dir():
+    """客户端（client_app.py）和它用的 gallery_store.py 不能接触照片目录：
+    不引用照片根目录配置，也不导入扫描、导出、写入照片目录的模块。"""
+    import re
+    from pathlib import Path
+
+    pkg = Path(safety.__file__).parent
+    banned = re.compile(r"photo_root|\bscanner\b|\bsafety\b|\bexporter\b|\bpublisher\b|\bpreviews\b|\borphans\b|from \.app\b")
+    offenders = []
+    for name in ("client_app.py", "gallery_store.py"):
+        for i, line in enumerate((pkg / name).read_text().splitlines(), 1):
+            code = line.split("#", 1)[0]
+            if banned.search(code):
+                offenders.append(f"{name}:{i}: {line.strip()}")
+    assert offenders == []
+
+
+@pytest.mark.parametrize("bad", ["", ".", "..", "a/b", "a\\b", ".hidden", "jpg", "RAW", " x", "x ", "a:b", "a?b",
+                                 "x" * 101])
+def test_dest_name_rejected(photo_root, bad):
+    with pytest.raises(safety.UnsafePathError):
+        safety.check_dest_name(bad)
+
+
+def test_export_to_client_dir(photo_root):
+    sess = photo_root / SESSION1
+    dest = "client_20261117_abc234"
+    d = safety.ensure_select_dir(sess, dest)
+    assert d == sess / dest and d.is_dir()
+    f, _ = safety.open_part(sess, "C.ARW", dest)
+    with f:
+        f.write(b"x")
+    final = safety.finalize_part(sess, "C.ARW", 0, 0, dest)
+    assert final == sess / dest / "C.ARW"
+    # 导出目录是指向别处的符号链接时拒绝
+    other = photo_root.parent / "elsewhere"
+    other.mkdir()
+    (sess / "client_link").symlink_to(other)
+    with pytest.raises(safety.UnsafePathError):
+        safety.ensure_select_dir(sess, "client_link")

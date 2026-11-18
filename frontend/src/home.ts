@@ -127,6 +127,7 @@ export class HomeView {
         h("div", { class: "brand", text: "rawpick" }),
         h("div", { class: "spacer" }),
         this.refreshBtn,
+        h("a", { class: "btn", href: "#/galleries", text: "客户相册", "data-testid": "galleries-link" }),
         h("a", { class: "btn", href: "#/settings", text: "⚙ 设置", "aria-label": "设置" })),
       h("main", { class: "home" },
         this.noticeEl,

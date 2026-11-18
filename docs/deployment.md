@@ -59,8 +59,9 @@ nano deploy.env      # 也可以在 Windows 上用记事本编辑
 | 变量 | 默认值 | 说明 |
 | --- | --- | --- |
 | `PHOTO_ROOT` | `/mnt/user/photos` | 照片根目录，**必改** |
-| `APPDATA` | `/mnt/user/appdata/rawpick` | 数据库和预览缓存，建议放在 SSD 缓存池上 |
-| `PORT` | `8080` | 浏览器访问端口 |
+| `APPDATA` | `/mnt/user/appdata/rawpick` | 数据库、预览缓存和客户相册，建议放在 SSD 缓存池上 |
+| `PORT` | `8080` | 管理员端端口（粗筛、导出、发布相册）。只在家里局域网用，不要做端口转发 |
+| `CLIENT_PORT` | `8081` | 客户相册端口。客户打开 `http://地址:这个端口/g/...`。以后对外时隧道只接这个端口 |
 | `PREVIEW_WORKERS` | `4` | 后台生成预览的线程数 |
 | `PUID` / `PGID` | `99` / `100` | 容器以 `nobody:users` 身份运行，与 Unraid 共享的默认属主一致 |
 | `UMASK` | `000` | 新建的 `select/` 和文件对所有人可读写，Windows 上能正常移动、删除 |
@@ -89,7 +90,7 @@ bash deploy.sh --build-only
 
 1. 打开 **Docker** 页面，点最下面的 **Add Container**。
 2. **Template** 下拉菜单里选 **rawpick**，表单会自动填好。
-3. 检查**照片根目录**、**数据目录**、**WebUI 端口**。右上角切到 Advanced View 可以看到 Extra Parameters 里的 `--user 99:100`，不要删。
+3. 检查**照片根目录**、**数据目录**、**WebUI 端口**、**客户端端口**。右上角切到 Advanced View 可以看到 Extra Parameters 里的 `--user 99:100`，不要删。
 4. 点 **Apply**。
 
 完成后，Docker 页面会出现 rawpick。点它的图标可以打开 WebUI、编辑、看日志，还能用右侧开关设置开机自动启动。
@@ -101,6 +102,21 @@ bash deploy.sh --build-only
 3. Docker 页面 → rawpick → **Edit** → 不用改任何东西，直接点 **Apply**。容器会用新镜像重建。
 
 Docker 页面的 “Check for Updates” 对本地构建的镜像不起作用（会显示 not available），这是正常的，按上面的步骤更新即可。
+
+### 从 0.2.x 升级到 0.3.0：给模板加客户端端口
+
+0.3.0 多了客户相册，用容器内的 8081 端口。已经存在的模板不会被覆盖，所以要手动加一次（`--build-only` 也会提示）：
+
+1. Docker 页面 → rawpick → **Edit**。
+2. 页面最下面点 **Add another Path, Port, Variable, Label or Device**。
+3. Config Type 选 **Port**；Name 填 `客户端端口`；Container Port 填 `8081`；Host Port 也填 `8081`；Connection Type 选 **TCP**。
+4. 点 **Add**，再点 **Apply**。
+
+Host Port 建议和容器内一样用 8081，这样自动生成的客户链接就是对的。8081 被占用、换了别的端口的话，
+要在 rawpick 的“设置 → 客户相册 → 客户访问地址”里填 `http://<Unraid IP>:<你填的 Host Port>`。
+管理员端的端口映射过（比如 8070 → 8080）而又没填客户访问地址时，相册详情页会提示你确认。
+
+不加这个端口，粗筛和导出照常能用，只是客户相册打不开。数据库会自动升级，原有的标记和导出记录都保留。
 
 ## 第三步（命令行方式）：一条命令部署
 
@@ -128,6 +144,10 @@ bash deploy.sh
 在电脑或 iPad 的浏览器里打开 `http://<Unraid IP>:8080`。
 iPad 上可以用 Safari 的“添加到主屏幕”，像 App 一样全屏使用。
 
+客户相册的链接在相册详情页里复制，形如 `http://<Unraid IP>:8081/g/<随机串>`。
+第一期只能在家里局域网打开；对外访问（域名 + Cloudflare Tunnel）在第二期，见 [路线图](roadmap.md)。
+**不要**把管理员端端口（8080）做端口转发或接到隧道上：管理员端没有登录，而且能写照片目录。
+
 ## 常用命令
 
 ```bash
@@ -143,10 +163,12 @@ bash deploy.sh --help        # 部署脚本帮助
 
 `APPDATA` 目录下：
 
-- `rawpick.db`：会话、标记、导出记录。只有这个文件值得备份。
+- `rawpick.db`：会话、标记、导出记录、客户相册（包括客户的选择和备注）。最值得备份。
 - `cache/`：预览缓存，随时可以删掉，删了会自动重新生成。
+- `galleries/`：客户相册的文件（带水印的预览、交付的成片）。删了的话客户链接里看不到图，需要重新发布；
+  客户的选择在数据库里，不受影响。
 
-照片目录里，rawpick 只会写 `<出门目录>/select/`。
+照片目录里，rawpick 只会写 `<出门目录>/select/` 和客户相册的导出目录 `<出门目录>/client_.../`。
 
 ## 排错
 
@@ -175,7 +197,15 @@ CPU 核数多的话，可以调大预览线程数。
 确认 UMASK 是 `000`，Extra Parameters 里有 `--user 99:100`。已经存在的文件可以在 Unraid 的 Tools → New Permissions 里修复。
 
 **端口被占用**
-模板方式在 Docker 页面 Edit 里改 WebUI 端口；命令行方式改 `deploy.env` 里的 `PORT`。
+模板方式在 Docker 页面 Edit 里改 WebUI 端口或客户端端口；命令行方式改 `deploy.env` 里的 `PORT`、`CLIENT_PORT`。
+
+**客户链接打不开**
+先确认模板里有客户端端口（见上面“从 0.2.x 升级到 0.3.0”），设置页“关于”里的客户端端口不是“未启动”。
+链接里的端口要和模板里的 Host Port 一致：管理员端和客户端都映射到别的端口时，在“设置 → 客户相册 → 客户访问地址”里填
+`http://<Unraid IP>:<客户端 Host Port>`。第一期只有家里局域网能打开。
+
+**水印里的中文显示成方框**
+设置页“关于”里会显示水印字体。用 Docker 镜像时字体是自带的；自己在别的环境运行时，用环境变量 `WATERMARK_FONT` 指定一个中文字体文件。
 
 **iPad 打不开**
 确认 iPad 和 Unraid 在同一个局域网，地址用 IP，不要用 `localhost`。

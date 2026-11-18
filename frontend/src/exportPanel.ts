@@ -1,6 +1,15 @@
 // 导出面板：先看清单 → 确认 → 后台拷贝并显示进度 → 结果。
+// 粗筛导出到 select/，客户相册导出到 client_.../，共用这个面板。
 
 import { api, type Job, type Plan } from "./api.js";
+
+export interface ExportTarget {
+  title: string;
+  /** 导出目录名，显示用 */
+  dest: string;
+  plan: () => Promise<Plan>;
+  start: () => Promise<{ job_id: number }>;
+}
 import { fmtBytes, h, nameList, openModal } from "./util.js";
 
 function row(label: string, value: string, names?: string[], note?: string): HTMLElement {
@@ -14,9 +23,10 @@ function row(label: string, value: string, names?: string[], note?: string): HTM
     nameList(names));
 }
 
-export function openExportPanel(sid: number, runningJob: number | null, onClose: () => void): void {
+export function openExportPanel(target: ExportTarget, runningJob: number | null, onClose: () => void): void {
   let timer = 0;
-  const m = openModal("导出到 select/", () => {
+  const d = `${target.dest}/`;
+  const m = openModal(target.title, () => {
     window.clearTimeout(timer);
     onClose();
   });
@@ -28,10 +38,10 @@ export function openExportPanel(sid: number, runningJob: number | null, onClose:
     m.body.replaceChildren(
       row("已选照片", `${plan.picked} 张`),
       row("将拷贝", `${plan.copy.length} 张 · ${fmtBytes(plan.copy_bytes)}`, plan.copy),
-      row("已在 select/ 中，跳过", `${plan.skip.length} 张`, plan.skip),
+      row(`已在 ${d} 中，跳过`, `${plan.skip.length} 张`, plan.skip),
       row("同名但大小不同，不覆盖", `${plan.conflict.length} 张`, plan.conflict),
       row("已选但缺少 RAW", `${plan.missing_raw.length} 张`, plan.missing_raw),
-      row("select/ 中有、但现在未选", `${plan.stale.length} 个`, plan.stale,
+      row(`${d} 中有、但现在未选`, `${plan.stale.length} 个`, plan.stale,
         "这些文件不会被删除，如需清理请自己处理。"),
     );
     const start = h("button", { class: "btn primary", text: "开始导出" }) as HTMLButtonElement;
@@ -42,7 +52,7 @@ export function openExportPanel(sid: number, runningJob: number | null, onClose:
     start.addEventListener("click", async () => {
       start.disabled = true;
       try {
-        const { job_id } = await api.startExport(sid);
+        const { job_id } = await target.start();
         poll(job_id);
       } catch (e) {
         const data = (e as { data?: { job_id?: number } }).data;
@@ -79,7 +89,7 @@ export function openExportPanel(sid: number, runningJob: number | null, onClose:
       row("同名但大小不同，未覆盖", `${r.conflicts.length} 张`, r.conflicts),
       row("缺少 RAW", `${r.missing_raw.length} 张`, r.missing_raw),
       row("出错", `${r.errors.length} 张`, errs),
-      row("select/ 中有、但现在未选", `${r.stale.length} 个`, r.stale, "这些文件没有被删除。"),
+      row(`${d} 中有、但现在未选`, `${r.stale.length} 个`, r.stale, "这些文件没有被删除。"),
     );
     m.actions.replaceChildren(closeBtn);
   }
@@ -107,6 +117,6 @@ export function openExportPanel(sid: number, runningJob: number | null, onClose:
   if (runningJob !== null) {
     poll(runningJob);
   } else {
-    api.plan(sid).then(showPlan, (e) => showError((e as Error).message));
+    target.plan().then(showPlan, (e) => showError((e as Error).message));
   }
 }

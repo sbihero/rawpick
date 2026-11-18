@@ -1,0 +1,191 @@
+// 客户页面的中英文文案。默认跟随浏览器语言，相册可以指定中文或英文。
+
+const zh = {
+  loading: "正在加载……",
+  notFound: "链接无效，请向摄影师确认链接是否正确。",
+  deleted: "这个相册已经删除了。",
+  building: "相册正在准备中，请稍后刷新页面。",
+  buildingProgress: "相册正在准备中（{ready} / {total}），请稍后刷新页面。",
+  refresh: "刷新",
+  passwordTitle: "请输入密码",
+  passwordHint: "摄影师给你的相册设了密码。",
+  passwordPlaceholder: "密码",
+  enter: "进入",
+  badPassword: "密码不对",
+  tooMany: "密码输错次数太多，请 15 分钟后再试",
+  all: "全部",
+  selected: "已选",
+  unselected: "未选",
+  loupe: "单张",
+  grid: "网格",
+  selectBtn: "♡ 选中",
+  selectedBtn: "♥ 已选",
+  selectedBadge: "已选",
+  prev: "上一张",
+  next: "下一张",
+  zoom: "放大",
+  first: "已经是第一张",
+  last: "已经是最后一张",
+  empty: "相册里没有照片",
+  emptySelected: "还没有选照片",
+  emptyUnselected: "没有未选的照片",
+  loadingOriginal: "加载中……",
+  zoomHint: "100% · 再点一下或按 Esc 退出",
+  outOfFilter: "已不在当前筛选中",
+  note: "✎ 备注",
+  noteTitle: "给这张照片写备注",
+  notePlaceholder: "比如：修掉背景里的路人、调亮一点",
+  noteSaved: "备注已保存",
+  noteCleared: "备注已删除",
+  save: "保存",
+  cancel: "取消",
+  close: "关闭",
+  counter: "已选 {n}",
+  counterLimit: "已选 {n} / 可选 {limit}",
+  submit: "提交选择",
+  submitted: "已提交",
+  closed: "已截止",
+  submitTitle: "提交选择",
+  submitConfirm: "共选了 {n} 张。提交后就不能再修改了，如需修改请联系摄影师。",
+  overBlock: "最多可以选 {limit} 张，你现在选了 {n} 张。请先取消 {over} 张再提交。",
+  overWarn: "你选了 {n} 张，比可选张数（{limit} 张）多了 {over} 张，多出的部分摄影师会和你确认。确定提交吗？",
+  nothingSelected: "还没有选照片",
+  submitDone: "已提交，谢谢！",
+  lockedSubmitted: "你已于 {date} 提交选择，不能再修改。如需修改请联系摄影师。",
+  lockedDeadline: "选片已于 {date} 截止，不能再修改。",
+  lockedToast: "已经不能修改了",
+  deadlineInfo: "请在 {date} 前提交",
+  deleteInfo: "相册将于 {date} 删除",
+  limitInfo: "可以选 {limit} 张",
+  helpTitle: "使用说明",
+  fromPhotographer: "摄影师留言",
+  start: "开始选片",
+  help: [
+    "点缩略图看大图。左右滑动，或者按键盘 ← →，可以翻页。",
+    "喜欢的照片点“♡ 选中”（键盘 F 或 Enter），再点一次取消。",
+    "需要特别处理的照片，点“✎ 备注”写下要求。",
+    "可以切换到“已选”，只看选中的照片再检查一遍。",
+    "选择会自动保存，没提交前可以随时回来继续。选好后点“提交选择”。",
+    "双击、双指张开或按 Z 放大看细节。",
+  ],
+  tabProof: "选片",
+  tabFinal: "成片",
+  downloadAll: "全部下载",
+  download: "下载",
+  deliveryInfo: "修好的成片 {n} 张（{size}），原图，没有水印。",
+  saveFailed: "保存失败：{msg}",
+  networkError: "网络出错，请稍后再试",
+};
+
+type Dict = { [K in keyof typeof zh]: (typeof zh)[K] extends string[] ? string[] : string };
+
+const en: Dict = {
+  loading: "Loading…",
+  notFound: "This link is not valid. Please check it with your photographer.",
+  deleted: "This gallery has been removed.",
+  building: "This gallery is being prepared. Please refresh the page in a moment.",
+  buildingProgress: "This gallery is being prepared ({ready} / {total}). Please refresh the page in a moment.",
+  refresh: "Refresh",
+  passwordTitle: "Enter password",
+  passwordHint: "Your photographer has protected this gallery with a password.",
+  passwordPlaceholder: "Password",
+  enter: "Open",
+  badPassword: "Incorrect password",
+  tooMany: "Too many attempts. Please try again in 15 minutes.",
+  all: "All",
+  selected: "Selected",
+  unselected: "Not selected",
+  loupe: "Single",
+  grid: "Grid",
+  selectBtn: "♡ Select",
+  selectedBtn: "♥ Selected",
+  selectedBadge: "Selected",
+  prev: "Previous",
+  next: "Next",
+  zoom: "Zoom",
+  first: "This is the first photo",
+  last: "This is the last photo",
+  empty: "No photos in this gallery",
+  emptySelected: "No photos selected yet",
+  emptyUnselected: "No unselected photos",
+  loadingOriginal: "Loading…",
+  zoomHint: "100% · Tap again or press Esc to exit",
+  outOfFilter: "No longer in this filter",
+  note: "✎ Note",
+  noteTitle: "Note for this photo",
+  notePlaceholder: "e.g. remove the person in the background, brighten a little",
+  noteSaved: "Note saved",
+  noteCleared: "Note removed",
+  save: "Save",
+  cancel: "Cancel",
+  close: "Close",
+  counter: "{n} selected",
+  counterLimit: "{n} of {limit} selected",
+  submit: "Submit",
+  submitted: "Submitted",
+  closed: "Closed",
+  submitTitle: "Submit your selection",
+  submitConfirm: "You selected {n} photos. After submitting you can't make changes; contact your photographer if you need to.",
+  overBlock: "You can select up to {limit} photos, but you have selected {n}. Please unselect {over} before submitting.",
+  overWarn: "You selected {n} photos, {over} more than the {limit} included. Your photographer will confirm the extra photos with you. Submit anyway?",
+  nothingSelected: "You haven't selected any photos yet",
+  submitDone: "Submitted. Thank you!",
+  lockedSubmitted: "You submitted your selection on {date}. Contact your photographer if you need to make changes.",
+  lockedDeadline: "Selection closed on {date}. Changes are no longer possible.",
+  lockedToast: "Changes are no longer possible",
+  deadlineInfo: "Please submit by {date}",
+  deleteInfo: "This gallery will be removed on {date}",
+  limitInfo: "You can select {limit} photos",
+  helpTitle: "How it works",
+  fromPhotographer: "Message from your photographer",
+  start: "Start",
+  help: [
+    "Tap a thumbnail to view it large. Swipe left or right, or use the ← → keys, to move between photos.",
+    "Tap “♡ Select” (or press F / Enter) on the photos you like. Tap again to unselect.",
+    "Tap “✎ Note” to leave editing requests for a photo.",
+    "Switch to “Selected” to review only the photos you picked.",
+    "Your choices are saved automatically, so you can come back any time before submitting. Tap “Submit” when you're done.",
+    "Double-tap, pinch out or press Z to zoom in.",
+  ],
+  tabProof: "Proofing",
+  tabFinal: "Final photos",
+  downloadAll: "Download all",
+  download: "Download",
+  deliveryInfo: "Your {n} edited photos ({size}) at full resolution, without watermark.",
+  saveFailed: "Could not save: {msg}",
+  networkError: "Network error. Please try again.",
+};
+
+export type Lang = "zh" | "en";
+type StrKey = { [K in keyof Dict]: Dict[K] extends string ? K : never }[keyof Dict];
+
+let current: Lang = "zh";
+
+export function detectLang(pref: "auto" | Lang): Lang {
+  if (pref === "zh" || pref === "en") return pref;
+  const langs = navigator.languages?.length ? navigator.languages : [navigator.language || "en"];
+  return langs.some((l) => l.toLowerCase().startsWith("zh")) ? "zh" : "en";
+}
+
+export function setLang(l: Lang): void {
+  current = l;
+  document.documentElement.lang = l === "zh" ? "zh-CN" : "en";
+}
+
+export function lang(): Lang {
+  return current;
+}
+
+export function t(key: StrKey, params: Record<string, string | number> = {}): string {
+  const dict: Dict = current === "zh" ? zh : en;
+  return (dict[key] as string).replace(/\{(\w+)\}/g, (_, k) => String(params[k] ?? ""));
+}
+
+export function helpLines(): string[] {
+  return current === "zh" ? zh.help : en.help;
+}
+
+export function fmtDay(ts: number): string {
+  return new Date(ts * 1000).toLocaleDateString(current === "zh" ? "zh-CN" : "en-US",
+    { year: "numeric", month: "long", day: "numeric" });
+}

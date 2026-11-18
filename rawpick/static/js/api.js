@@ -39,7 +39,22 @@ export const api = {
     plan: (sid) => req("GET", `/api/sessions/${sid}/export/plan`),
     startExport: (sid) => req("POST", `/api/sessions/${sid}/export`),
     job: (jid) => req("GET", `/api/jobs/${jid}`),
+    galleries: () => req("GET", "/api/galleries"),
+    createGallery: (sid, opts) => req("POST", `/api/sessions/${sid}/galleries`, opts),
+    gallery: (gid) => req("GET", `/api/galleries/${gid}`),
+    updateGallery: (gid, opts) => req("PUT", `/api/galleries/${gid}`, opts),
+    deleteGallery: (gid) => req("DELETE", `/api/galleries/${gid}`),
+    reopenGallery: (gid) => req("POST", `/api/galleries/${gid}/reopen`),
+    resetLink: (gid) => req("POST", `/api/galleries/${gid}/reset-link`),
+    galleryPlan: (gid, dest) => req("GET", `/api/galleries/${gid}/export/plan?dest=${encodeURIComponent(dest)}`),
+    galleryExport: (gid, dest) => req("POST", `/api/galleries/${gid}/export`, { dest }),
+    deliveryFolders: (gid) => req("GET", `/api/galleries/${gid}/delivery/folders`),
+    deliver: (gid, folder) => req("POST", `/api/galleries/${gid}/delivery`, { folder }),
+    cancelDelivery: (gid) => req("DELETE", `/api/galleries/${gid}/delivery`),
 };
+export function galleryImg(gid, pid, kind) {
+    return `/api/galleries/${gid}/img/${pid}/${kind}`;
+}
 export function imgUrl(p, kind) {
     return `/img/${p.id}/${kind}?v=${p.v}`;
 }

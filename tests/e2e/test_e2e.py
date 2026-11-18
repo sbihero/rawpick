@@ -347,3 +347,112 @@ def test_ipad_touch(browser, srv):
     pg.tap("[data-testid=help-btn]")
     assert pg.locator("[data-testid=help-panel]").count() == 1
     ctx.close()
+
+
+# ---------------------------------------------------------------- 客户相册
+
+PHONE = dict(viewport={"width": 390, "height": 844}, device_scale_factor=2, is_mobile=True, has_touch=True)
+
+
+def test_publish_select_submit_export(browser, srv, page, photo_root):
+    open_session(page)
+    for _ in range(3):
+        page.keyboard.press("f")
+    page.click("[data-testid=publish-btn]")
+    page.wait_for_selector("[data-testid=publish-submit]")
+    assert "3 张已选照片" in page.text_content("[data-testid=publish-dialog]")
+    page.fill("input[name=client_name]", "王先生")
+    page.fill("input[name=limit_count]", "2")
+    page.click("text=需要密码")
+    page.click("[data-testid=publish-submit]")
+    assert page.text_content("[data-testid=publish-dialog] .error") == "请填写密码，或者选择公开"
+    page.fill("input[name=password]", "2468")
+    page.click("[data-testid=publish-submit]")
+    page.wait_for_selector("[data-testid=gallery-link]")
+    page.wait_for_function("document.querySelector('.status').textContent === '选片中'", timeout=15000)
+    link = page.input_value("[data-testid=gallery-link]")
+    assert link.startswith(srv.client_url + "/g/")
+
+    ctx = browser.new_context(locale="zh-CN", **PHONE)
+    c = ctx.new_page()
+    errors: list[str] = []
+    c.on("pageerror", lambda e: errors.append(str(e)))
+    c.goto(link)
+    c.fill("[data-testid=password]", "1111")
+    c.click("button[type=submit]")
+    c.wait_for_selector(".center-card .error:not([hidden])")
+    c.fill("[data-testid=password]", "2468")
+    c.click("button[type=submit]")
+    c.wait_for_selector("[data-testid=welcome]")
+    c.click("[data-testid=welcome] .btn.primary")
+    assert c.text_content("[data-testid=count]") == "已选 0 / 可选 2"
+    c.tap(".cell[data-i='0']")
+    c.wait_for_selector("[data-testid=pick-btn]:visible")
+    for _ in range(3):  # 选 3 张：选的时候不拦
+        c.tap("[data-testid=pick-btn]")
+        c.click("button[aria-label='下一张']")
+    assert c.text_content("[data-testid=count]") == "已选 3 / 可选 2"
+    c.click("button[aria-label='上一张']")
+    c.tap("[data-testid=note-btn]")
+    c.fill("[data-testid=note-dialog] textarea", "去掉路人")
+    c.click("[data-testid=note-dialog] .btn.primary")
+    c.wait_for_selector(".badge.note")
+    # 超过上限，不能提交
+    c.click("[data-testid=submit-btn]")
+    assert "请先取消 1 张" in c.text_content("[data-testid=submit-dialog]")
+    c.click("[data-testid=submit-dialog] .btn")
+    c.click("button[aria-label='上一张']")
+    c.tap("[data-testid=pick-btn]")  # 取消第 2 张（第 3 张有备注，保留）
+    assert c.text_content("[data-testid=count]") == "已选 2 / 可选 2"
+    c.click("[data-testid=submit-btn]")
+    c.click("[data-testid=submit-confirm]")
+    c.wait_for_selector("[data-testid=submit-btn]:disabled")
+    assert "提交选择" in c.text_content("[data-testid=client-notice]")
+    ctx.close()
+    assert errors == []
+
+    page.reload()
+    page.wait_for_selector("[data-testid=gallery-summary]")
+    assert "客户已选 2 张" in page.text_content("[data-testid=gallery-summary]")
+    assert page.text_content(".gphoto-note") == "去掉路人"
+    dest = page.input_value("[data-testid=export-dir]")
+    page.click("[data-testid=gallery-export]")
+    page.wait_for_selector("[data-testid=export-panel] .btn.primary:not([disabled])")
+    page.click("[data-testid=export-panel] .btn.primary")
+    page.wait_for_selector("text=导出完成")
+    assert len(list((photo_root / SESSION1 / dest).iterdir())) == 2
+
+
+def test_client_delivery_and_english(browser, srv, photo_root):
+    import requests
+    import shutil as sh
+
+    sid = [s for s in requests.get(srv.url + "/api/sessions").json()["sessions"] if s["name"] == SESSION2][0]["id"]
+    requests.post(f"{srv.url}/api/sessions/{sid}/open")
+    photos = requests.get(f"{srv.url}/api/sessions/{sid}/photos").json()["photos"]
+    requests.put(f"{srv.url}/api/photos/{photos[0]['id']}/picked", json={"picked": True})
+    g = requests.post(f"{srv.url}/api/sessions/{sid}/galleries",
+                      json={"title": "Final", "delete_at": 1893456000}).json()
+    final = photo_root / SESSION2 / "final"
+    final.mkdir()
+    for f in sorted((photo_root / SESSION2 / "jpg").glob("*.JPG"))[:2]:
+        sh.copy2(f, final / f.name)
+    srv.app.state.publisher.wait()
+    requests.post(f"{srv.url}/api/galleries/{g['id']}/delivery", json={"folder": "final"})
+    srv.app.state.publisher.wait()
+
+    ctx = browser.new_context(locale="en-US", **PHONE)
+    c = ctx.new_page()
+    c.goto(g["link"])
+    c.wait_for_selector("[data-testid=welcome]")
+    assert "This gallery will be removed on" in c.text_content("[data-testid=welcome]")
+    c.click("[data-testid=welcome] .btn.primary")
+    assert c.text_content("[data-testid=count]") == "0 selected"
+    c.click("[data-tab=final]")
+    assert c.get_attribute("[data-testid=zip-link]", "href").endswith("/d/all.zip")
+    assert "2 edited photos" in c.text_content("[data-testid=client-notice]")
+    c.tap(".body:not([hidden]) .cell[data-i='1']")
+    href = c.get_attribute("[data-testid=download-link]", "href")
+    r = c.request.get(srv.client_url + href)
+    assert r.body() == sorted(final.iterdir())[1].read_bytes()
+    ctx.close()

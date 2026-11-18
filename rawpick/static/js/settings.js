@@ -23,15 +23,48 @@ export class SettingsView {
     }
     build() {
         const orphansBox = h("div", { class: "orphans-box" });
+        const galleryBox = h("div", { class: "form" });
         const about = h("dl", { class: "about" });
         this.root.replaceChildren(h("header", { class: "topbar" }, h("a", { class: "btn back", href: "#/", text: "‹ 返回" }), h("div", { class: "title", text: "设置" })), h("main", { class: "settings" }, h("section", { class: "settings-section", id: "shortcuts" }, h("h2", { text: "快捷键" }), h("p", { class: "muted small",
             text: "每个操作可以绑定多个键。点“添加”后按下要用的键，按 Esc 取消。修改会自动保存，所有设备共用。" }), this.keysBox, h("div", { class: "settings-actions" }, h("button", { class: "btn", text: "恢复默认快捷键", onclick: () => this.reset() }))), h("section", { class: "settings-section", id: "orphans" }, h("h2", { text: "找回标记" }), h("p", { class: "muted small",
-            text: "文件夹改名或移动后，它的标记会留在数据库里，对不上新文件夹。照片完全相同的会自动关联；对不上的可以在这里手动指定。" }), orphansBox), h("section", { class: "settings-section" }, h("h2", { text: "关于" }), about)));
+            text: "文件夹改名或移动后，它的标记会留在数据库里，对不上新文件夹。照片完全相同的会自动关联；对不上的可以在这里手动指定。" }), orphansBox), h("section", { class: "settings-section", id: "gallery-settings" }, h("h2", { text: "客户相册" }), h("p", { class: "muted small",
+            text: "新发布的相册使用这里的设置；已经发布的相册不受影响。" }), galleryBox), h("section", { class: "settings-section" }, h("h2", { text: "关于" }), about)));
         this.renderKeys();
         void renderOrphans(orphansBox);
+        void this.renderGallerySettings(galleryBox);
         api.health().then((hl) => {
-            about.append(h("dt", { text: "版本" }), h("dd", { text: hl.version }), h("dt", { text: "照片根目录" }), h("dd", { text: hl.photo_root }), h("dt", { text: "数据目录" }), h("dd", { text: hl.data_dir }));
+            about.append(h("dt", { text: "版本" }), h("dd", { text: hl.version }), h("dt", { text: "照片根目录" }), h("dd", { text: hl.photo_root }), h("dt", { text: "数据目录" }), h("dd", { text: hl.data_dir }), h("dt", { text: "客户端端口" }), h("dd", { text: hl.client_port ? String(hl.client_port) : "未启动" }), h("dt", { text: "水印字体" }), h("dd", { text: hl.watermark_font || "没有找到，中文水印会显示成方框" }));
         }, () => about.append(h("dd", { class: "error", text: "读取失败" })));
+    }
+    async renderGallerySettings(box) {
+        let s, hl;
+        try {
+            [s, hl] = await Promise.all([api.settings(), api.health()]);
+        }
+        catch (e) {
+            box.replaceChildren(h("p", { class: "error", text: `读取失败：${e.message}` }));
+            return;
+        }
+        const auto = hl.client_port ? `${location.protocol}//${location.hostname}:${hl.client_port}` : "";
+        const wm = h("input", { class: "input", maxlength: "40", value: s.watermark_text ?? "严记肘子铺",
+            name: "watermark_text" });
+        const base = h("input", { class: "input", maxlength: "200", value: s.client_base_url ?? "",
+            name: "client_base_url", placeholder: auto ? `自动：${auto}` : "" });
+        const saveOne = async (key, value, okText) => {
+            try {
+                await api.saveSettings({ [key]: value });
+                toast(okText);
+            }
+            catch (e) {
+                toast(e.message, 4000);
+            }
+        };
+        box.replaceChildren(h("label", { class: "field" }, h("span", { class: "field-label", text: "水印文字" }), h("div", { class: "row" }, wm, h("button", { class: "btn", text: "保存", "data-testid": "save-watermark",
+            onclick: () => void saveOne("watermark_text", wm.value.trim() || null, "已保存水印文字") })), h("span", { class: "field-hint muted small",
+            text: "加在客户看到的预览图中间，半透明。也作为工作室名显示在客户页面顶部。" })), h("label", { class: "field" }, h("span", { class: "field-label", text: "客户访问地址" }), h("div", { class: "row" }, base, h("button", { class: "btn", text: "保存",
+            onclick: () => void saveOne("client_base_url", base.value.trim() || null, base.value.trim() ? "已保存客户访问地址" : "已恢复自动") })), h("span", { class: "field-hint muted small",
+            text: "生成客户链接用的地址。留空时用“这台服务器的地址 + 客户端端口”，只在家里局域网能打开；"
+                + "以后接上域名和隧道后，填成 https://你的域名。" })));
     }
     renderKeys() {
         const rows = ACTIONS.map((a) => {

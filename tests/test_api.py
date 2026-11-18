@@ -48,8 +48,10 @@ def test_session_status(srv, photo_root):
 
 
 def test_settings(srv):
-    assert get(srv, "/api/settings").json() == {}
     put = lambda body: requests.put(f"{srv.url}/api/settings", json=body, timeout=10)
+    # 测试服务启动时写入了 client_base_url，先清掉
+    assert put({"client_base_url": None}).json() == {}
+    assert get(srv, "/api/settings").json() == {}
     r = put({"shortcuts": {"next": ["KeyJ", "ArrowRight"]}, "auto_adopt": False})
     assert r.json() == {"shortcuts": {"next": ["KeyJ", "ArrowRight"]}, "auto_adopt": False}
     assert get(srv, "/api/settings").json()["auto_adopt"] is False
@@ -58,6 +60,15 @@ def test_settings(srv):
     assert put({"shortcuts": {"next": "KeyJ"}}).status_code == 400
     assert put({"auto_adopt": "yes"}).status_code == 400
     assert put([1]).status_code == 400
+    # 客户相册相关
+    assert put({"watermark_text": "严记肘子铺"}).json()["watermark_text"] == "严记肘子铺"
+    assert put({"watermark_text": " "}).status_code == 400
+    assert put({"watermark_text": "x" * 41}).status_code == 400
+    assert put({"client_base_url": "https://photos.example.com"}).status_code == 200
+    assert put({"client_base_url": "ftp://x"}).status_code == 400
+    # 内部的 Cookie 密钥不能通过接口读写
+    assert "_cookie_secret" not in get(srv, "/api/settings").json()
+    assert put({"_cookie_secret": "x"}).status_code == 400
 
 
 def test_orphan_endpoints(srv, photo_root):

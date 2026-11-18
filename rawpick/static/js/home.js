@@ -100,7 +100,7 @@ export class HomeView {
             viewSeg.append(b);
         }
         this.refreshBtn.addEventListener("click", () => void this.load(true));
-        this.root.replaceChildren(h("header", { class: "topbar" }, h("div", { class: "brand", text: "rawpick" }), h("div", { class: "spacer" }), this.refreshBtn, h("a", { class: "btn", href: "#/settings", text: "⚙ 设置", "aria-label": "设置" })), h("main", { class: "home" }, this.noticeEl, h("div", { class: "home-tools" }, search, this.yearSel, statusSeg, sortSel, viewSeg), this.summaryEl, this.listEl));
+        this.root.replaceChildren(h("header", { class: "topbar" }, h("div", { class: "brand", text: "rawpick" }), h("div", { class: "spacer" }), this.refreshBtn, h("a", { class: "btn", href: "#/galleries", text: "客户相册", "data-testid": "galleries-link" }), h("a", { class: "btn", href: "#/settings", text: "⚙ 设置", "aria-label": "设置" })), h("main", { class: "home" }, this.noticeEl, h("div", { class: "home-tools" }, search, this.yearSel, statusSeg, sortSel, viewSeg), this.summaryEl, this.listEl));
     }
     async load(manual = false) {
         const ticket = ++this.loading;

@@ -1,5 +1,4 @@
 // 预加载窗口：提前下载并解码前后几张大预览，移出窗口的立即释放。
-import { imgUrl } from "./api.js";
 export class Preloader {
     cache = new Map();
     get(id) {
@@ -10,7 +9,7 @@ export class Preloader {
         if (!e) {
             const img = new Image();
             img.decoding = "async";
-            img.src = imgUrl(p, "preview");
+            img.src = p.preview;
             const entry = { img, decoded: false, ready: Promise.resolve() };
             entry.ready = img.decode().then(() => {
                 entry.decoded = true;

@@ -126,16 +126,26 @@ def _atomic_save(im: Image.Image, dest: Path, quality: int) -> None:
         raise
 
 
-def render_previews(src: Path, preview_path: Path, thumb_path: Path,
-                    preview_size: int, thumb_size: int) -> dict[str, str]:
-    """生成大预览和缩略图，返回 EXIF 信息。"""
+def load_display_image(src: Path, max_size: int) -> tuple[Image.Image, dict[str, str]]:
+    """读 JPG 并缩到长边不超过 max_size：草稿模式解码、按 EXIF 方向旋转、转 sRGB。返回 (图, EXIF)。"""
     with Image.open(src) as im:
         info = extract_exif(im)
         icc = im.info.get("icc_profile")
-        im.draft("RGB", (preview_size, preview_size))
+        im.draft("RGB", (max_size, max_size))
         img = ImageOps.exif_transpose(im)
     img = _to_srgb(img, icc)
-    img.thumbnail((preview_size, preview_size), Image.Resampling.BICUBIC, reducing_gap=2.0)
+    img.thumbnail((max_size, max_size), Image.Resampling.BICUBIC, reducing_gap=2.0)
+    return img, info
+
+
+def atomic_save(im: Image.Image, dest: Path, quality: int) -> None:
+    _atomic_save(im, dest, quality)
+
+
+def render_previews(src: Path, preview_path: Path, thumb_path: Path,
+                    preview_size: int, thumb_size: int) -> dict[str, str]:
+    """生成大预览和缩略图，返回 EXIF 信息。"""
+    img, info = load_display_image(src, preview_size)
     _atomic_save(img, preview_path, quality=85)
     img.thumbnail((thumb_size, thumb_size), Image.Resampling.BICUBIC, reducing_gap=2.0)
     _atomic_save(img, thumb_path, quality=80)

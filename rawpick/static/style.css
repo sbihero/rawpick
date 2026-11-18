@@ -268,3 +268,89 @@ kbd {
 .danger-btn { color: var(--danger); border-color: #6b2b2b; }
 .toggle-row { display: flex; align-items: baseline; gap: 8px; margin: 8px 0 4px; cursor: pointer; }
 .toggle-row input { transform: translateY(1px); }
+
+/* ---------------------------------------------------------------- 表单 */
+.form { display: flex; flex-direction: column; gap: 12px; max-width: 640px; }
+.field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.field-label { color: var(--muted); font-size: 12px; }
+.field-hint { line-height: 1.4; }
+.row { display: flex; gap: 8px; align-items: center; min-width: 0; }
+.row.wrap { flex-wrap: wrap; margin: 8px 0; }
+.row.two { align-items: flex-start; flex-wrap: wrap; }
+.row.two > .field { flex: 1 1 220px; }
+.form .input { max-width: none; flex: 1 1 auto; min-width: 0; }
+.input.narrow { flex: 0 0 auto; width: 170px; min-width: 0; }
+.textarea { resize: vertical; min-height: 64px; font: inherit; line-height: 1.5; width: 100%; }
+.form .toggle-row { margin: 0; }
+.select:disabled, .input:disabled { opacity: .5; }
+.offscreen { position: fixed; left: -9999px; top: 0; }
+
+/* ---------------------------------------------------------------- 客户相册（管理员端） */
+.page { padding: 20px; overflow: auto; flex: 1; }
+.gallery-page { max-width: 980px; }
+.link-input { flex: 1 1 auto; min-width: 0; max-width: none; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; }
+.status + .status { margin-left: 6px; }
+.gstatus-building { color: var(--muted); border-color: #555; }
+.gstatus-open { color: var(--accent); border-color: var(--accent); }
+.gstatus-submitted { color: var(--pick); border-color: var(--pick); }
+.gstatus-deadline { color: var(--warn); border-color: var(--warn); }
+.gstatus-deleted { color: var(--muted); border-color: #555; text-decoration: line-through; }
+.gstatus-delivered { color: #c58cff; border-color: #c58cff; }
+.gphotos { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px; margin-top: 8px; }
+.gphoto { display: flex; gap: 10px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px; min-width: 0; }
+.gphoto.selected { border-color: #7a3448; }
+.gthumb { width: 96px; height: 96px; object-fit: contain; background: #0e0e0e; border-radius: 4px; flex: none; }
+.gthumb.missing { display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 12px; }
+.gphoto-info { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.gphoto-name { font-weight: 600; font-size: 13px; word-break: break-all; }
+.gphoto-note { font-size: 13px; color: var(--text); background: var(--panel-2); border-radius: 6px; padding: 4px 8px; white-space: pre-wrap; word-break: break-word; }
+
+/* ---------------------------------------------------------------- 网格格子上的备注标记、客户的爱心 */
+.cell .flag {
+  position: absolute; top: 6px; left: 6px; width: 22px; height: 22px; border-radius: 11px;
+  background: rgba(0, 0, 0, .65); color: #fff; font-size: 12px; line-height: 22px; text-align: center; display: none;
+}
+.cell.note .flag { display: block; }
+.client-root .cell.picked { box-shadow: inset 0 0 0 2px var(--heart); }
+.client-root .cell .check { background: var(--heart); }
+.pick-btn.heart.on { border-color: var(--heart); color: var(--heart); background: rgba(255, 92, 138, .1); }
+.pick-btn.locked { opacity: .5; }
+.badge.note { color: var(--text); border-color: #666; max-width: 40vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+a.ctl { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; padding: 0 14px; }
+
+/* ---------------------------------------------------------------- 客户页面 */
+:root { --heart: #ff5c8a; }
+.center-card {
+  margin: auto; width: min(380px, calc(100% - 32px)); background: var(--panel); border: 1px solid var(--line);
+  border-radius: 14px; padding: 24px; display: flex; flex-direction: column; gap: 12px; text-align: center;
+}
+.center-card h1 { margin: 0; font-size: 18px; }
+.center-card p { margin: 0; }
+.center-card .input { max-width: none; flex: none; width: 100%; }
+.studio { font-size: 12px; letter-spacing: 2px; color: var(--muted); }
+.client-top { flex-wrap: nowrap; }
+.client-title { min-width: 0; display: flex; flex-direction: column; }
+.client-title .title { max-width: none; }
+.toolbar {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 12px;
+  background: var(--panel); border-bottom: 1px solid var(--line); flex: none;
+}
+.count.over { color: var(--warn); }
+.client-notice { padding: 6px 12px; font-size: 13px; color: var(--muted); border-bottom: 1px solid var(--line); flex: none; white-space: pre-line; }
+.client-notice.warn { color: var(--warn); background: rgba(240, 180, 41, .08); }
+.help-list { margin: 0 0 8px; padding-left: 20px; }
+.help-list li { margin: 4px 0; }
+.pre { white-space: pre-wrap; margin: 0 0 8px; }
+.facts { color: var(--warn); white-space: pre-line; }
+
+@media (max-width: 600px) {
+  .grid { --cell: 108px; padding: 6px; gap: 6px; }
+  .controls { gap: 8px; padding-left: 8px; padding-right: 8px; }
+  .ctl { min-width: 44px; }
+  .pick-btn { min-width: 112px; }
+  .zoom-btn { display: none; }
+  .toolbar .seg-btn { padding: 5px 9px; }
+  .infobar { padding: 4px 10px; }
+  .exif { display: none; }
+  .client-top .btn { padding: 6px 10px; }
+}

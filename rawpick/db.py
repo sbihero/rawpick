@@ -59,6 +59,8 @@ CREATE TABLE IF NOT EXISTS settings (
 CREATE TABLE IF NOT EXISTS export_jobs (
     id          INTEGER PRIMARY KEY,
     session_id  INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    dest        TEXT NOT NULL DEFAULT 'select', -- 导出到出门目录下的哪个文件夹
+    gallery_id  INTEGER,                  -- 导出客户所选时是哪个相册
     status      TEXT NOT NULL,            -- running / done / failed
     total       INTEGER NOT NULL DEFAULT 0,
     done        INTEGER NOT NULL DEFAULT 0,
@@ -69,7 +71,75 @@ CREATE TABLE IF NOT EXISTS export_jobs (
     started_at  REAL,
     finished_at REAL
 );
+
+-- 客户相册：从一次出门的已选照片发布出来的快照。文件在 DATA_DIR/galleries/<id>/
+CREATE TABLE IF NOT EXISTS galleries (
+    id            INTEGER PRIMARY KEY,
+    code          TEXT NOT NULL UNIQUE,   -- 6 位短编号，用在导出文件夹名里
+    token         TEXT NOT NULL UNIQUE,   -- 客户链接里的随机串
+    session_id    INTEGER REFERENCES sessions(id) ON DELETE SET NULL,
+    dir_name      TEXT NOT NULL,          -- 发布时的出门文件夹名（显示用）
+    title         TEXT NOT NULL,
+    client_name   TEXT NOT NULL DEFAULT '',
+    message       TEXT NOT NULL DEFAULT '',
+    lang          TEXT NOT NULL DEFAULT 'auto',   -- auto / zh / en
+    limit_count   INTEGER,                -- NULL 表示不限
+    limit_mode    TEXT NOT NULL DEFAULT 'block',  -- block：超出不能提交；warn：提醒后可提交
+    watermark     INTEGER NOT NULL DEFAULT 1,
+    watermark_text TEXT NOT NULL DEFAULT '',
+    password_hash TEXT,                   -- NULL 表示公开
+    deadline_at   REAL,                   -- 过了之后不能再改选择
+    delete_at     REAL,                   -- 到时自动删除相册文件
+    status        TEXT NOT NULL DEFAULT 'building', -- building / open / submitted
+    build_error   TEXT,
+    created_at    REAL NOT NULL,
+    published_at  REAL,
+    submitted_at  REAL,
+    export_dir    TEXT,
+    last_export_at REAL,
+    delivery_dir  TEXT,                   -- 成片来自出门目录下的哪个文件夹
+    delivery_status TEXT,                 -- NULL / building / ready / failed
+    delivery_error TEXT,
+    delivered_at  REAL,
+    deleted_at    REAL                    -- 相册文件已删除（记录保留）
+);
+
+CREATE TABLE IF NOT EXISTS gallery_photos (
+    id          INTEGER PRIMARY KEY,
+    gallery_id  INTEGER NOT NULL REFERENCES galleries(id) ON DELETE CASCADE,
+    idx         INTEGER NOT NULL,
+    stem        TEXT NOT NULL,
+    jpg_name    TEXT NOT NULL,
+    raw_name    TEXT,
+    width       INTEGER,
+    height      INTEGER,
+    ready       INTEGER NOT NULL DEFAULT 0,
+    error       TEXT,
+    selected    INTEGER NOT NULL DEFAULT 0,
+    note        TEXT NOT NULL DEFAULT '',
+    updated_at  REAL,
+    UNIQUE (gallery_id, stem)
+);
+CREATE INDEX IF NOT EXISTS gallery_photos_g ON gallery_photos (gallery_id, idx);
+
+CREATE TABLE IF NOT EXISTS gallery_deliveries (
+    id          INTEGER PRIMARY KEY,
+    gallery_id  INTEGER NOT NULL REFERENCES galleries(id) ON DELETE CASCADE,
+    idx         INTEGER NOT NULL,
+    name        TEXT NOT NULL,
+    size        INTEGER NOT NULL,
+    width       INTEGER,
+    height      INTEGER,
+    ready       INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS gallery_deliveries_g ON gallery_deliveries (gallery_id, idx);
 """
+
+# 旧版本数据库升级：给已有的表补上新加的列
+MIGRATIONS = [
+    ("export_jobs", "dest", "TEXT NOT NULL DEFAULT 'select'"),
+    ("export_jobs", "gallery_id", "INTEGER"),
+]
 
 
 class Database:
@@ -83,6 +153,10 @@ class Database:
             self._conn.execute("PRAGMA journal_mode=WAL")
             self._conn.execute("PRAGMA foreign_keys=ON")
             self._conn.executescript(SCHEMA)
+            for table, col, decl in MIGRATIONS:
+                cols = {r[1] for r in self._conn.execute(f"PRAGMA table_info({table})")}
+                if col not in cols:
+                    self._conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
 
     def execute(self, sql: str, params: tuple | dict = ()) -> sqlite3.Cursor:
         with self._lock:
