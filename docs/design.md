@@ -124,6 +124,9 @@ flowchart LR
 - **断点续筛**：当前照片 ID 延迟 0.8 秒后保存到服务器（`sessions.cursor_photo_id`）；
   切换页面、刷新、标签页隐藏或关闭时立即保存（`fetch` 带 `keepalive`）。任何设备打开都会回到这张。
 - **操作说明**：顶栏 `?` 按钮或 `?` 键打开，分键盘（按当前设置生成）、鼠标、触屏三部分。
+- **下载原图**（0.4.0）：单张视图底部控制条的“下载”是一个链接，指向 `/img/{id}/download`，翻页时跟着换成当前照片。
+  服务端以附件方式返回原始 JPG（`Content-Disposition: attachment`，非 ASCII 文件名用 `filename*`），所以文件名就是原文件名。
+  只读照片目录；原文件不存在时返回 404。网格视图不显示这个按钮。
 
 **快捷键**：每个操作可以绑定多个键，默认分左右手两套，每套都能单手完成全部操作。
 
@@ -269,7 +272,8 @@ SQLite 文件放在 `DATA_DIR/rawpick.db`，共九张表。源目录里不写任
 | PUT | `/api/photos/{id}/picked` | 设置选中状态，`{"picked": true}` |
 | GET | `/img/{id}/thumb?v=` | 缩略图 |
 | GET | `/img/{id}/preview?v=` | 大预览，没生成时插队立即生成 |
-| GET | `/img/{id}/original?v=` | 原图 JPG |
+| GET | `/img/{id}/original?v=` | 原图 JPG（放大查焦用） |
+| GET | `/img/{id}/download` | 原图 JPG，以附件方式下载，文件名为原文件名 |
 | GET | `/api/sessions/{id}/export/plan` | 导出清单 |
 | POST | `/api/sessions/{id}/export` | 开始导出，返回 `job_id`；已有任务时返回 409 |
 | GET | `/api/jobs/{id}` | 导出进度与结果 |
@@ -327,7 +331,7 @@ SQLite 文件放在 `DATA_DIR/rawpick.db`，共九张表。源目录里不写任
 ### 15.1 分两期
 
 - **第一期（0.3.0）**：本地发布。客户端端口在家里局域网里就能用；接上域名和隧道之前，外面的客户打不开。
-- **第二期（0.4.0）**：对外访问（域名 + Cloudflare Tunnel）和“发布到云服务器”。云服务器上跑同一个镜像的“仅客户端模式”，
+- **第二期（0.5.0）**：对外访问（域名 + Cloudflare Tunnel）和“发布到云服务器”。云服务器上跑同一个镜像的“仅客户端模式”，
   家里推送相册包、拉回客户的选择。相册包从第一期就按“可以整体搬走”的方式组织，第二期只加传输。
 
 ### 15.2 流程

@@ -181,3 +181,46 @@ def test_errors(srv):
     assert get(srv, "/api/jobs/999").status_code == 404
     r = requests.put(f"{srv.url}/api/photos/1/picked", data="{bad", timeout=10)
     assert r.status_code == 400
+
+
+# ---------------------------------------------------------------- 下载原图（0.4.0）
+
+def _photos(srv, name):
+    sid = [s for s in get(srv, "/api/sessions").json()["sessions"] if s["name"] == name][0]["id"]
+    requests.post(f"{srv.url}/api/sessions/{sid}/open", timeout=10)
+    return get(srv, f"/api/sessions/{sid}/photos").json()["photos"]
+
+
+def test_download_original(srv, photo_root):
+    import shutil
+    from urllib.parse import quote
+
+    # 中文文件名：新建一个出门目录，放一对中文名的 JPG + RAW
+    src_jpg = sorted((photo_root / SESSION1 / "jpg").glob("*.JPG"))[0]
+    src_raw = sorted((photo_root / SESSION1 / "raw").glob("*.ARW"))[0]
+    outing = photo_root / "20261119_下载测试"
+    (outing / "jpg").mkdir(parents=True)
+    (outing / "raw").mkdir()
+    shutil.copy2(src_jpg, outing / "jpg" / "日落 01.JPG")
+    shutil.copy2(src_raw, outing / "raw" / "日落 01.ARW")
+    before = snapshot(photo_root)
+
+    for name, folder in ((SESSION1, photo_root / SESSION1), ("20261119_下载测试", outing)):
+        p = _photos(srv, name)[0]
+        r = get(srv, f"/img/{p['id']}/download?v={p['v']}")
+        assert r.status_code == 200
+        assert r.headers["content-type"] == "image/jpeg"
+        assert r.content == (folder / "jpg" / p["name"]).read_bytes()
+        cd = r.headers["content-disposition"]
+        assert cd.startswith("attachment")
+        assert p["name"] in cd or quote(p["name"]) in cd
+    # 下载是只读的
+    assert snapshot(photo_root) == before
+
+    assert get(srv, "/img/999999/download").status_code == 404
+    # 原文件被移走：返回 404 和说明，而不是服务器错误
+    p = _photos(srv, "20261119_下载测试")[0]
+    (outing / "jpg" / "日落 01.JPG").unlink()
+    for kind in ("download", "original"):
+        r = get(srv, f"/img/{p['id']}/{kind}")
+        assert r.status_code == 404 and "原始 JPG 不存在" in r.json()["error"]

@@ -282,9 +282,15 @@ def build_app(cfg: Config) -> Starlette:
         pid = request.path_params["pid"]
         kind = request.path_params["kind"]
         cache = IMMUTABLE if "v" in request.query_params else "no-cache"
-        if kind == "original":
+        if kind in ("original", "download"):
             row = photo_row(pid)
             path = previews.jpg_path(row, row["dir_name"])
+            if not path.is_file():
+                raise ApiError(404, f"原始 JPG 不存在（可能已被移动或删除）：{row['jpg_name']}")
+            if kind == "download":
+                # 以附件方式下载，文件名用原文件名（非 ASCII 名字走 filename*）；只读，不写任何文件
+                return FileResponse(path, media_type="image/jpeg", filename=row["jpg_name"],
+                                    headers={"Cache-Control": "no-cache"})
             return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": cache})
         if kind not in KINDS:
             raise ApiError(404, "未知图片类型")

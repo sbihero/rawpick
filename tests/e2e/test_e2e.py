@@ -485,3 +485,24 @@ def test_admin_phone_layout(browser, srv):
         c.wait_for_timeout(300)
         assert c.evaluate("document.documentElement.scrollWidth") <= 390, hash_
     ctx.close()
+
+
+def test_loupe_download_button(page, photo_root):
+    """单张视图底部的“下载”：下载当前这张的原始 JPG；翻页后跟着变；网格里不显示。"""
+    open_session(page)
+    btn = page.locator("[data-testid=download-btn]")
+    assert btn.is_visible()
+    first = page.text_content("[data-testid=name]")
+    with page.expect_download() as info:
+        btn.click()
+    d = info.value
+    assert d.suggested_filename == first
+    assert open(d.path(), "rb").read() == (photo_root / SESSION1 / "jpg" / first).read_bytes()
+    page.keyboard.press("d")
+    second = page.text_content("[data-testid=name]")
+    assert second != first
+    with page.expect_download() as info:
+        btn.click()
+    assert info.value.suggested_filename == second
+    page.keyboard.press("g")
+    assert not btn.is_visible()

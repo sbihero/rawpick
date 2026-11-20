@@ -322,7 +322,8 @@ kbd {
 .pick-btn.heart.on { border-color: var(--heart); color: var(--heart); background: rgba(255, 92, 138, .1); }
 .pick-btn.locked { opacity: .5; }
 .badge.note { color: var(--text); border-color: #666; max-width: 40vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-a.ctl { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; padding: 0 14px; }
+a.ctl { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; padding: 0 14px; color: inherit; }
+a.ctl.disabled { opacity: .4; pointer-events: none; }
 
 /* ---------------------------------------------------------------- 客户页面 */
 :root { --heart: #ff5c8a; }

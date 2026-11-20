@@ -226,6 +226,6 @@ export function galleryImg(gid: number, pid: number, kind: "thumb" | "preview"):
   return `/api/galleries/${gid}/img/${pid}/${kind}`;
 }
 
-export function imgUrl(p: Photo, kind: "thumb" | "preview" | "original"): string {
+export function imgUrl(p: Photo, kind: "thumb" | "preview" | "original" | "download"): string {
   return `/img/${p.id}/${kind}?v=${p.v}`;
 }

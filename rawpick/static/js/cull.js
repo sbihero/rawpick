@@ -31,6 +31,9 @@ export class CullView {
     extraEl = h("div", { class: "topbar-extra", "data-testid": "topbar-extra" });
     moreBtn = h("button", { class: "btn more-btn", text: "⋯", title: "更多", "aria-label": "更多",
         "aria-expanded": "false", "data-testid": "more-btn" });
+    /** 单张视图底部的“下载”：下载当前照片的原始 JPG（原分辨率） */
+    downloadLink = h("a", { class: "ctl dl-btn", text: "下载", title: "下载原始 JPG（原分辨率）",
+        "data-testid": "download-btn" });
     filterBtns = {};
     modeBtns = {};
     constructor(root, sid) {
@@ -52,9 +55,13 @@ export class CullView {
             }),
             describe: (p) => this.describe(p),
             onRender: () => this.renderHeader(),
-            onCurrent: (p) => this.saveCursorSoon(p),
+            onCurrent: (p) => {
+                this.saveCursorSoon(p);
+                this.updateDownload(p);
+            },
             onAction: (a) => { if (a === "help")
                 this.openHelp(); },
+            extraControls: [this.downloadLink],
             modalOpen: () => this.modalOpen,
         });
         this.bindEvents();
@@ -216,6 +223,17 @@ export class CullView {
             if (this.browser.current() === p)
                 this.browser.refreshCurrent();
         }, () => { }).finally(() => this.exifPending.delete(p.id));
+    }
+    updateDownload(p) {
+        if (p) {
+            this.downloadLink.setAttribute("href", imgUrl(p, "download"));
+            this.downloadLink.setAttribute("download", p.name);
+            this.downloadLink.classList.remove("disabled");
+        }
+        else {
+            this.downloadLink.removeAttribute("href");
+            this.downloadLink.classList.add("disabled");
+        }
     }
     // ------------------------------------------------------------------ 进度
     saveCursorSoon(p) {
